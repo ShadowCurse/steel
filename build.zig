@@ -1,8 +1,11 @@
 const std = @import("std");
 
-pub fn build(b: *std.Build) void {
+pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
+
+    var env_map = try std.process.getEnvMap(b.allocator);
+    defer env_map.deinit();
 
     const exe_mod = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
@@ -14,6 +17,11 @@ pub fn build(b: *std.Build) void {
         .name = "steel",
         .root_module = exe_mod,
     });
+    exe.addIncludePath(.{ .cwd_relative = env_map.get("SDL3_INCLUDE_PATH").? });
+    exe.addIncludePath(.{ .cwd_relative = env_map.get("LIBGL_INCLUDE_PATH").? });
+    exe.linkLibC();
+    exe.linkSystemLibrary("SDL3");
+    exe.linkSystemLibrary("GL");
     b.installArtifact(exe);
 
     const run_cmd = b.addRunArtifact(exe);
