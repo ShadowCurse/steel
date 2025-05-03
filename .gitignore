@@ -1,2 +1,13 @@
 .zig-cache/
 zig-out/
+/release/
+/debug/
+/build/
+/build-*/
+/docgen_tmp/
+.envrc
+.direnv
+*.spv
+/wasm/steel.js
+/wasm/steel.wasm
+/wasm/assets/*
