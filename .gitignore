@@ -11,3 +11,4 @@ zig-out/
 /wasm/steel.js
 /wasm/steel.wasm
 /wasm/assets/*
+imgui.ini
