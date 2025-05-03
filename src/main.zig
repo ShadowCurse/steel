@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const log = @import("log.zig");
 const sdl = @import("bindings/sdl.zig");
 const gl = @import("bindings/gl.zig");
@@ -6,6 +7,10 @@ const cimgui = @import("bindings/cimgui.zig");
 
 const WINDOW_WIDTH = 1280;
 const WINDOW_HEIGHT = 720;
+const OPENGL_VERSION = if (builtin.target.os.tag == .emscripten)
+    "#version 100"
+else
+    "#version 150";
 
 pub fn main() !void {
     if (!sdl.SDL_Init(sdl.SDL_INIT_AUDIO)) {
@@ -32,7 +37,7 @@ pub fn main() !void {
 
     _ = cimgui.igCreateContext(null);
     _ = cimgui.ImGui_ImplSDL3_InitForOpenGL(@ptrCast(window), context);
-    _ = cimgui.ImGui_ImplOpenGL3_Init("#version 150");
+    _ = cimgui.ImGui_ImplOpenGL3_Init(OPENGL_VERSION);
 
     var stop: bool = false;
     while (!stop) {

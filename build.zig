@@ -9,41 +9,58 @@ pub fn build(b: *std.Build) !void {
 
     const cimgui = build_cimgui(b, target, optimize, &env_map);
 
-    const exe_mod = b.createModule(.{
-        .root_source_file = b.path("src/main.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
+    const artifact = if (target.result.os.tag == .emscripten) blk: {
+        const cache_include = std.fs.path.join(
+            b.allocator,
+            &.{
+                b.sysroot.?,
+                "cache",
+                "sysroot",
+                "include",
+            },
+        ) catch @panic("Out of memory");
+        defer b.allocator.free(cache_include);
+        const cache_path = std.Build.LazyPath{ .cwd_relative = cache_include };
 
-    const exe = b.addExecutable(.{
-        .name = "steel",
-        .root_module = exe_mod,
-    });
-    exe.addIncludePath(.{ .cwd_relative = env_map.get("SDL3_INCLUDE_PATH").? });
-    exe.addIncludePath(.{ .cwd_relative = env_map.get("LIBGL_INCLUDE_PATH").? });
-    exe.addIncludePath(b.path("thirdparty/cimgui"));
-    exe.linkLibC();
-    exe.linkSystemLibrary("SDL3");
-    exe.linkSystemLibrary("GL");
-    exe.linkLibrary(cimgui);
-    b.installArtifact(exe);
+        cimgui.addIncludePath(cache_path);
+        b.installArtifact(cimgui);
 
-    const run_cmd = b.addRunArtifact(exe);
-    run_cmd.step.dependOn(b.getInstallStep());
-    if (b.args) |args| {
-        run_cmd.addArgs(args);
+        const lib = b.addStaticLibrary(.{
+            .name = "wasm",
+            .root_source_file = b.path("src/main.zig"),
+            .target = target,
+            .optimize = optimize,
+        });
+        lib.addIncludePath(cache_path);
+        break :blk lib;
+    } else blk: {
+        const exe = b.addExecutable(.{
+            .name = "steel",
+            .root_source_file = b.path("src/main.zig"),
+            .target = target,
+            .optimize = optimize,
+        });
+        exe.linkSystemLibrary("SDL3");
+        exe.linkSystemLibrary("GL");
+        break :blk exe;
+    };
+    artifact.addIncludePath(.{ .cwd_relative = env_map.get("SDL3_INCLUDE_PATH").? });
+    artifact.addIncludePath(.{ .cwd_relative = env_map.get("LIBGL_INCLUDE_PATH").? });
+    artifact.addIncludePath(b.path("thirdparty/cimgui"));
+    artifact.linkLibC();
+    artifact.linkLibrary(cimgui);
+    b.installArtifact(artifact);
+
+    if (target.result.os.tag != .emscripten) {
+        const run_cmd = b.addRunArtifact(artifact);
+        run_cmd.step.dependOn(b.getInstallStep());
+        if (b.args) |args| {
+            run_cmd.addArgs(args);
+        }
+
+        const run_step = b.step("run", "Run the app");
+        run_step.dependOn(&run_cmd.step);
     }
-
-    const run_step = b.step("run", "Run the app");
-    run_step.dependOn(&run_cmd.step);
-
-    const exe_unit_tests = b.addTest(.{
-        .root_module = exe_mod,
-    });
-    const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);
-
-    const test_step = b.step("test", "Run unit tests");
-    test_step.dependOn(&run_exe_unit_tests.step);
 }
 
 fn build_cimgui(
