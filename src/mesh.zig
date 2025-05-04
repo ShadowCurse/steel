@@ -1,3 +1,4 @@
+const gl = @import("bindings/gl.zig");
 const _math = @import("math.zig");
 const Vec3 = _math.Vec3;
 const Vec4 = _math.Vec4;
@@ -8,6 +9,19 @@ pub const MeshVertex = extern struct {
     normal: Vec3 = .{},
     uv_y: f32 = 0.0,
     color: Vec4 = .{},
+
+    pub fn set_attributes() void {
+        gl.glVertexAttribPointer(0, 3, gl.GL_FLOAT, gl.GL_FALSE, @sizeOf(MeshVertex), @ptrFromInt(0));
+        gl.glVertexAttribPointer(1, 1, gl.GL_FLOAT, gl.GL_FALSE, @sizeOf(MeshVertex), @ptrFromInt(3 * @sizeOf(f32)));
+        gl.glVertexAttribPointer(2, 3, gl.GL_FLOAT, gl.GL_FALSE, @sizeOf(MeshVertex), @ptrFromInt(4 * @sizeOf(f32)));
+        gl.glVertexAttribPointer(3, 1, gl.GL_FLOAT, gl.GL_FALSE, @sizeOf(MeshVertex), @ptrFromInt(7 * @sizeOf(f32)));
+        gl.glVertexAttribPointer(4, 4, gl.GL_FLOAT, gl.GL_FALSE, @sizeOf(MeshVertex), @ptrFromInt(8 * @sizeOf(f32)));
+        gl.glEnableVertexAttribArray(0);
+        gl.glEnableVertexAttribArray(1);
+        gl.glEnableVertexAttribArray(2);
+        gl.glEnableVertexAttribArray(3);
+        gl.glEnableVertexAttribArray(4);
+    }
 };
 
 pub const Cube = struct {

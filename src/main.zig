@@ -269,16 +269,7 @@ pub const App = struct {
         gl.glBindBuffer(gl.GL_ARRAY_BUFFER, vertex_buffer);
         gl.glBindBuffer(gl.GL_ELEMENT_ARRAY_BUFFER, index_buffer);
 
-        gl.glVertexAttribPointer(0, 3, gl.GL_FLOAT, gl.GL_FALSE, @sizeOf(mesh.MeshVertex), @ptrFromInt(0));
-        gl.glVertexAttribPointer(1, 1, gl.GL_FLOAT, gl.GL_FALSE, @sizeOf(mesh.MeshVertex), @ptrFromInt(3 * @sizeOf(f32)));
-        gl.glVertexAttribPointer(2, 3, gl.GL_FLOAT, gl.GL_FALSE, @sizeOf(mesh.MeshVertex), @ptrFromInt(4 * @sizeOf(f32)));
-        gl.glVertexAttribPointer(3, 1, gl.GL_FLOAT, gl.GL_FALSE, @sizeOf(mesh.MeshVertex), @ptrFromInt(7 * @sizeOf(f32)));
-        gl.glVertexAttribPointer(4, 4, gl.GL_FLOAT, gl.GL_FALSE, @sizeOf(mesh.MeshVertex), @ptrFromInt(8 * @sizeOf(f32)));
-        gl.glEnableVertexAttribArray(0);
-        gl.glEnableVertexAttribArray(1);
-        gl.glEnableVertexAttribArray(2);
-        gl.glEnableVertexAttribArray(3);
-        gl.glEnableVertexAttribArray(4);
+        mesh.MeshVertex.set_attributes();
 
         // gl.glClipControl(gl.GL_LOWER_LEFT, gl.GL_ZERO_TO_ONE);
         gl.glEnable(gl.GL_DEPTH_TEST);
