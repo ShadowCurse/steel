@@ -10,5 +10,5 @@ zig-out/
 *.spv
 /wasm/steel.js
 /wasm/steel.wasm
-/wasm/assets/*
+/wasm/resources/*
 imgui.ini

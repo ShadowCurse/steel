@@ -1,5 +1,6 @@
 #!/bin/bash
 
+cp -r resources wasm
 cd wasm
 
 emcc \
@@ -16,6 +17,7 @@ emcc \
   -sABORTING_MALLOC=0 \
   -sASYNCIFY \
   --emrun \
+  --embed-file resources@/resources \
   ../zig-out/lib/* \
   ../../SDL/build/libSDL3.a \
   -o \

@@ -79,110 +79,6 @@ pub fn main() !void {
     }
 }
 
-const vertex_shader_src: [*c]const u8 = if (builtin.target.os.tag == .emscripten)
-    \\#version 100
-    \\precision mediump float;
-    \\
-    \\attribute vec3 in_position;
-    \\attribute float in_uv_x;
-    \\attribute vec3 in_normal;
-    \\attribute float in_uv_y;
-    \\attribute vec4 in_color;
-    \\
-    \\varying vec4 frag_color;
-    \\varying vec3 normal;
-    \\varying vec2 uv;
-    \\
-    \\uniform mat4 projection;
-    \\uniform mat4 view;
-    \\uniform mat4 model;
-    \\
-    \\void main() {
-    \\    gl_Position = projection * view * model * vec4(in_position, 1.0);
-    \\    frag_color = in_color;
-    \\    normal = in_normal;
-    \\    uv = vec2(in_uv_x, in_uv_y);
-    \\}
-else
-    \\#version 450
-    \\
-    \\layout (location = 0) in vec3 in_position;
-    \\layout (location = 1) in float in_uv_x;
-    \\layout (location = 2) in vec3 in_normal;
-    \\layout (location = 3) in float in_uv_y;
-    \\layout (location = 4) in vec4 in_color;
-    \\
-    \\layout (location = 5) out vec4 out_color;
-    \\
-    \\uniform mat4 projection;
-    \\uniform mat4 view;
-    \\uniform mat4 model;
-    \\
-    \\void main() {
-    \\    gl_Position = projection * view * model * vec4(in_position, 1.0);
-    \\    out_color = in_color;
-    \\}
-;
-
-const fragment_shader_src: [*c]const u8 = if (builtin.target.os.tag == .emscripten)
-    \\#version 100
-    \\precision mediump float;
-    \\
-    \\varying vec4 frag_color;
-    \\
-    \\void main() {
-    \\    gl_FragColor = abs(frag_color);
-    \\}
-else
-    \\#version 450
-    \\
-    \\layout (location = 5) in vec4 in_color;
-    \\
-    \\layout (location = 0) out vec4 out_color;
-    \\
-    \\void main() {
-    \\    out_color = abs(in_color);
-    \\}
-;
-
-pub fn check_shader_result(
-    comptime src: std.builtin.SourceLocation,
-    shader: u32,
-    tag: u32,
-) void {
-    var success: i32 = undefined;
-    gl.glGetShaderiv(shader, tag, &success);
-    if (success != gl.GL_TRUE) {
-        var buff: [1024]u8 = undefined;
-        var s: i32 = undefined;
-        gl.glGetShaderInfoLog(shader, 1024, &s, &buff);
-        log.err(
-            src,
-            "error in shader: {s}({d})",
-            .{ buff[0..@intCast(s)], s },
-        );
-    }
-}
-
-pub fn check_program_result(
-    comptime src: std.builtin.SourceLocation,
-    shader: u32,
-    tag: u32,
-) void {
-    var success: i32 = undefined;
-    gl.glGetProgramiv(shader, tag, &success);
-    if (success != gl.GL_TRUE) {
-        var buff: [1024]u8 = undefined;
-        var s: i32 = undefined;
-        gl.glGetProgramInfoLog(shader, 1024, &s, &buff);
-        log.err(
-            src,
-            "error in shader: {s}({d})",
-            .{ buff[0..@intCast(s)], s },
-        );
-    }
-}
-
 pub const Camera = struct {
     position: math.Vec3 = .{},
     pitch: f32 = 0.0,
@@ -215,25 +111,72 @@ pub const Camera = struct {
     }
 };
 
-pub const App = struct {
-    vertex_buffer: u32,
-    index_buffer: u32,
-    vertex_shader: u32,
-    fragment_shader: u32,
-    shader: u32,
-    vertex_array: u32,
-    camera: Camera,
+pub const PAGE_SIZE = std.heap.page_size_min;
+pub const FileMem = struct {
+    mem: []align(PAGE_SIZE) u8,
 
     const Self = @This();
 
-    pub fn init() Self {
+    pub fn init(path: []const u8) !Self {
+        const fd = try std.posix.open(path, .{ .ACCMODE = .RDONLY }, 0);
+        defer std.posix.close(fd);
+
+        const stat = try std.posix.fstat(fd);
+        const mem = try std.posix.mmap(
+            null,
+            @intCast(stat.size),
+            std.posix.PROT.READ,
+            .{ .TYPE = .PRIVATE },
+            fd,
+            0,
+        );
+        return .{
+            .mem = mem,
+        };
+    }
+
+    pub fn deinit(self: Self) void {
+        std.posix.munmap(self.mem);
+    }
+};
+
+pub const Shader = struct {
+    vertex_shader: u32,
+    fragment_shader: u32,
+    shader: u32,
+
+    const Self = @This();
+
+    pub fn init(vertex_shader_path: []const u8, fragment_shader_path: []const u8) Self {
+        const vertex_shader_src =
+            FileMem.init(vertex_shader_path) catch @panic("cannot read vertex shader");
+        defer vertex_shader_src.deinit();
+
+        const fragment_shader_src =
+            FileMem.init(fragment_shader_path) catch @panic("cannot read fragment shader");
+        defer fragment_shader_src.deinit();
+
         const vertex_shader = gl.glCreateShader(gl.GL_VERTEX_SHADER);
-        gl.glShaderSource(vertex_shader, 1, &vertex_shader_src, null);
+        const v_ptr = [_]*const u8{@ptrCast(vertex_shader_src.mem.ptr)};
+        const v_len: i32 = @intCast(vertex_shader_src.mem.len);
+        gl.glShaderSource(
+            vertex_shader,
+            1,
+            @ptrCast(&v_ptr),
+            @ptrCast(&v_len),
+        );
         gl.glCompileShader(vertex_shader);
         check_shader_result(@src(), vertex_shader, gl.GL_COMPILE_STATUS);
 
         const fragment_shader = gl.glCreateShader(gl.GL_FRAGMENT_SHADER);
-        gl.glShaderSource(fragment_shader, 1, &fragment_shader_src, null);
+        const f_ptr = [_]*const u8{@ptrCast(fragment_shader_src.mem.ptr)};
+        const f_len: i32 = @intCast(fragment_shader_src.mem.len);
+        gl.glShaderSource(
+            fragment_shader,
+            1,
+            @ptrCast(&f_ptr),
+            @ptrCast(&f_len),
+        );
         gl.glCompileShader(fragment_shader);
         check_shader_result(@src(), fragment_shader, gl.GL_COMPILE_STATUS);
 
@@ -242,6 +185,77 @@ pub const App = struct {
         gl.glAttachShader(shader, fragment_shader);
         gl.glLinkProgram(shader);
         check_program_result(@src(), shader, gl.GL_LINK_STATUS);
+
+        return .{
+            .vertex_shader = vertex_shader,
+            .fragment_shader = fragment_shader,
+            .shader = shader,
+        };
+    }
+
+    pub fn get_uniform_location(self: *const Self, name: [*c]const u8) i32 {
+        return gl.glGetUniformLocation(self.shader, name);
+    }
+
+    pub fn use(self: *const Self) void {
+        gl.glUseProgram(self.shader);
+    }
+
+    fn check_shader_result(
+        comptime src: std.builtin.SourceLocation,
+        shader: u32,
+        tag: u32,
+    ) void {
+        var success: i32 = undefined;
+        gl.glGetShaderiv(shader, tag, &success);
+        if (success != gl.GL_TRUE) {
+            var buff: [1024]u8 = undefined;
+            var s: i32 = undefined;
+            gl.glGetShaderInfoLog(shader, 1024, &s, &buff);
+            log.assert(
+                src,
+                false,
+                "error in shader: {s}({d})",
+                .{ buff[0..@intCast(s)], s },
+            );
+        }
+    }
+
+    fn check_program_result(
+        comptime src: std.builtin.SourceLocation,
+        shader: u32,
+        tag: u32,
+    ) void {
+        var success: i32 = undefined;
+        gl.glGetProgramiv(shader, tag, &success);
+        if (success != gl.GL_TRUE) {
+            var buff: [1024]u8 = undefined;
+            var s: i32 = undefined;
+            gl.glGetProgramInfoLog(shader, 1024, &s, &buff);
+            log.assert(
+                src,
+                false,
+                "error in shader: {s}({d})",
+                .{ buff[0..@intCast(s)], s },
+            );
+        }
+    }
+};
+
+pub const App = struct {
+    vertex_buffer: u32,
+    index_buffer: u32,
+    shader: Shader,
+    vertex_array: u32,
+    camera: Camera,
+
+    const Self = @This();
+
+    pub fn init() Self {
+        const shader = if (builtin.target.os.tag == .emscripten)
+            Shader.init("resources/shaders/mesh_web.vert", "resources/shaders/mesh_web.frag")
+        else
+            Shader.init("resources/shaders/mesh.vert", "resources/shaders/mesh.frag");
 
         var vertex_buffer: u32 = undefined;
         gl.glGenBuffers(1, &vertex_buffer);
@@ -280,8 +294,6 @@ pub const App = struct {
         return .{
             .vertex_buffer = vertex_buffer,
             .index_buffer = index_buffer,
-            .vertex_shader = vertex_shader,
-            .fragment_shader = fragment_shader,
             .shader = shader,
             .vertex_array = vertex_array,
             .camera = camera,
@@ -320,11 +332,11 @@ pub const App = struct {
         };
         A.t += 0.5 * dt;
         const model = math.Mat4.rotation_z(A.t);
-        const view_loc = gl.glGetUniformLocation(self.shader, "view");
-        const projection_loc = gl.glGetUniformLocation(self.shader, "projection");
-        const model_loc = gl.glGetUniformLocation(self.shader, "model");
+        const view_loc = self.shader.get_uniform_location("view");
+        const projection_loc = self.shader.get_uniform_location("projection");
+        const model_loc = self.shader.get_uniform_location("model");
 
-        gl.glUseProgram(self.shader);
+        self.shader.use();
         gl.glUniformMatrix4fv(view_loc, 1, gl.GL_FALSE, @ptrCast(&camera_view));
         gl.glUniformMatrix4fv(projection_loc, 1, gl.GL_FALSE, @ptrCast(&camera_projection));
         gl.glUniformMatrix4fv(model_loc, 1, gl.GL_FALSE, @ptrCast(&model));
