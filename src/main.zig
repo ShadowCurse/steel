@@ -7,6 +7,7 @@ const cimgui = @import("bindings/cimgui.zig");
 
 const math = @import("math.zig");
 const mesh = @import("mesh.zig");
+const events = @import("events.zig");
 
 const WINDOW_WIDTH = 1280;
 const WINDOW_HEIGHT = 720;
@@ -58,15 +59,18 @@ pub fn main() !void {
     var app = App.init();
     var stop: bool = false;
 
+    var app_events: [events.MAX_EVENTS]events.Event = undefined;
+    var sdl_events: [events.MAX_EVENTS]sdl.SDL_Event = undefined;
+
     var t = std.time.nanoTimestamp();
     while (!stop) {
         const new_t = std.time.nanoTimestamp();
         const dt = @as(f32, @floatFromInt(new_t - t)) / std.time.ns_per_s;
         t = new_t;
 
-        var sdl_event: sdl.SDL_Event = undefined;
-        while (sdl.SDL_PollEvent(&sdl_event)) {
-            _ = cimgui.ImGui_ImplSDL3_ProcessEvent(@ptrCast(&sdl_event));
+        const new_sdl_events = events.get_sdl_events(&sdl_events);
+        for (new_sdl_events) |*sdl_event| {
+            _ = cimgui.ImGui_ImplSDL3_ProcessEvent(@ptrCast(sdl_event));
             switch (sdl_event.type) {
                 sdl.SDL_EVENT_QUIT => {
                     stop = true;
@@ -74,7 +78,10 @@ pub fn main() !void {
                 else => {},
             }
         }
-        app.update(dt);
+
+        const new_events = events.parse_sdl_events(new_sdl_events, &app_events);
+        app.update(new_events, dt);
+
         _ = sdl.SDL_GL_SwapWindow(window);
     }
 }
@@ -87,9 +94,59 @@ pub const Camera = struct {
     near: f32 = 0.1,
     far: f32 = 10000.0,
 
+    velocity: math.Vec3 = .{},
+    speed: f32 = 5.0,
+    active: bool = false,
+
     const ORIENTATION = math.Quat.from_rotation_axis(.X, .NEG_Z, .Y);
+    const SENSITIVITY = 0.5;
 
     const Self = @This();
+
+    pub fn process_input(self: *Self, event: events.Event, dt: f32) void {
+        switch (event) {
+            .Keyboard => |key| {
+                const value: f32 = if (key.type == .Pressed) 1.0 else 0.0;
+                switch (key.key) {
+                    events.KeybordKeyScancode.W => self.velocity.z = value,
+                    events.KeybordKeyScancode.S => self.velocity.z = -value,
+                    events.KeybordKeyScancode.A => self.velocity.x = -value,
+                    events.KeybordKeyScancode.D => self.velocity.x = value,
+                    events.KeybordKeyScancode.SPACE => self.velocity.y = -value,
+                    events.KeybordKeyScancode.LCTRL => self.velocity.y = value,
+                    else => {},
+                }
+            },
+            .Mouse => |mouse| {
+                switch (mouse) {
+                    .Button => |button| {
+                        self.active = button.type == .Pressed;
+                    },
+                    .Motion => |motion| {
+                        if (self.active) {
+                            self.yaw -= motion.x * Self.SENSITIVITY * dt;
+                            self.pitch -= motion.y * Self.SENSITIVITY * dt;
+                            if (std.math.pi / 2.0 < self.pitch) {
+                                self.pitch = std.math.pi / 2.0;
+                            }
+                            if (self.pitch < -std.math.pi / 2.0) {
+                                self.pitch = -std.math.pi / 2.0;
+                            }
+                        }
+                    },
+                    else => {},
+                }
+            },
+            else => {},
+        }
+    }
+
+    pub fn move(self: *Self, dt: f32) void {
+        const rotation = self.rotation_matrix();
+        const velocity = self.velocity.mul_f32(self.speed * dt).extend(1.0);
+        const delta = rotation.mul_vec4(velocity);
+        self.position = self.position.add(delta.shrink());
+    }
 
     pub fn transform(self: *const Self) math.Mat4 {
         return self.rotation_matrix().translate(self.position);
@@ -102,12 +159,15 @@ pub const Camera = struct {
     }
 
     pub fn projection(self: *const Self) math.Mat4 {
-        return math.Mat4.perspective(
+        var m = math.Mat4.perspective(
             self.fovy,
             @as(f32, @floatFromInt(WINDOW_WIDTH)) / @as(f32, @floatFromInt(WINDOW_HEIGHT)),
             self.near,
             self.far,
         );
+        // flip Y for opengl
+        m.j.y *= -1.0;
+        return m;
     }
 };
 
@@ -247,6 +307,7 @@ pub const App = struct {
     index_buffer: u32,
     shader: Shader,
     vertex_array: u32,
+
     camera: Camera,
 
     const Self = @This();
@@ -300,7 +361,11 @@ pub const App = struct {
         };
     }
 
-    pub fn update(self: *Self, dt: f32) void {
+    pub fn update(self: *Self, new_events: []const events.Event, dt: f32) void {
+        for (new_events) |event|
+            self.camera.process_input(event, dt);
+        self.camera.move(dt);
+
         cimgui.ImGui_ImplOpenGL3_NewFrame();
         cimgui.ImGui_ImplSDL3_NewFrame();
         cimgui.igNewFrame();
