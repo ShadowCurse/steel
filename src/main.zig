@@ -7,10 +7,6 @@ const cimgui = @import("bindings/cimgui.zig");
 
 const WINDOW_WIDTH = 1280;
 const WINDOW_HEIGHT = 720;
-const OPENGL_VERSION = if (builtin.target.os.tag == .emscripten)
-    "#version 100"
-else
-    "#version 450";
 
 pub fn main() !void {
     if (!sdl.SDL_Init(sdl.SDL_INIT_AUDIO)) {
@@ -38,7 +34,12 @@ pub fn main() !void {
 
     _ = cimgui.igCreateContext(null);
     _ = cimgui.ImGui_ImplSDL3_InitForOpenGL(@ptrCast(window), context);
-    _ = cimgui.ImGui_ImplOpenGL3_Init(OPENGL_VERSION);
+
+    const cimgli_opengl_version = if (builtin.target.os.tag == .emscripten)
+        "#version 100"
+    else
+        "#version 450";
+    _ = cimgui.ImGui_ImplOpenGL3_Init(cimgli_opengl_version);
 
     gl.glViewport(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
 
@@ -182,7 +183,6 @@ pub const App = struct {
         const shader = gl.glCreateProgram();
         gl.glAttachShader(shader, vertex_shader);
         gl.glAttachShader(shader, fragment_shader);
-        // gl.glBindAttribLocation(shader, 0, "in_position");
         gl.glLinkProgram(shader);
         check_program_result(@src(), shader, gl.GL_LINK_STATUS);
 
