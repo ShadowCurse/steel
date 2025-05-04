@@ -11,6 +11,11 @@ const mesh = @import("mesh.zig");
 const WINDOW_WIDTH = 1280;
 const WINDOW_HEIGHT = 720;
 
+pub const log_options = log.Options{
+    .level = .Info,
+    .colors = builtin.target.os.tag != .emscripten,
+};
+
 pub fn main() !void {
     if (!sdl.SDL_Init(sdl.SDL_INIT_AUDIO)) {
         log.err(@src(), "Cannot init SDL: {s}", .{sdl.SDL_GetError()});
