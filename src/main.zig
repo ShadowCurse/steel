@@ -57,6 +57,14 @@ pub fn main() !void {
 
     gl.glViewport(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
 
+    if (builtin.target.os.tag != .emscripten)
+        gl.glClipControl(gl.GL_LOWER_LEFT, gl.GL_ZERO_TO_ONE);
+
+    gl.glEnable(gl.GL_DEPTH_TEST);
+    gl.glEnable(gl.GL_BLEND);
+    gl.glDepthFunc(gl.GL_GEQUAL);
+    gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA);
+
     var app = App.init();
     var stop: bool = false;
 
@@ -471,14 +479,6 @@ pub const App = struct {
 
         const cube = Mesh.init(mesh.MeshVertex, &mesh.Cube.VERTICES, &mesh.Cube.INDICES);
         const grid = Grid.init();
-
-        if (builtin.target.os.tag != .emscripten)
-            gl.glClipControl(gl.GL_LOWER_LEFT, gl.GL_ZERO_TO_ONE);
-
-        gl.glEnable(gl.GL_DEPTH_TEST);
-        gl.glEnable(gl.GL_BLEND);
-        gl.glDepthFunc(gl.GL_GEQUAL);
-        gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA);
 
         const floating_camera: Camera = .{ .position = .{ .y = -10.0 } };
         const topdown_camera: Camera = .{
