@@ -5,6 +5,8 @@ const sdl = @import("bindings/sdl.zig");
 const gl = @import("bindings/gl.zig");
 const cimgui = @import("bindings/cimgui.zig");
 
+const Allocator = std.heap.DebugAllocator;
+
 const math = @import("math.zig");
 const mesh = @import("mesh.zig");
 const events = @import("events.zig");
@@ -301,14 +303,115 @@ pub const Shader = struct {
     }
 };
 
-pub const App = struct {
+pub const Mesh = struct {
     vertex_buffer: u32,
     index_buffer: u32,
-    mesh_shader: Shader,
+    n_indices: i32,
     vertex_array: u32,
-    grid_buffer: u32,
-    grid_vertex_array: u32,
+
+    const Self = @This();
+
+    pub fn init(VERTEX_TYPE: type, vertices: []const VERTEX_TYPE, indices: []const u32) Self {
+        var vertex_buffer: u32 = undefined;
+        gl.glGenBuffers(1, &vertex_buffer);
+        gl.glBindBuffer(gl.GL_ARRAY_BUFFER, vertex_buffer);
+        gl.glBufferData(
+            gl.GL_ARRAY_BUFFER,
+            @intCast(@sizeOf(VERTEX_TYPE) * vertices.len),
+            vertices.ptr,
+            gl.GL_STATIC_DRAW,
+        );
+
+        var index_buffer: u32 = undefined;
+        gl.glGenBuffers(1, &index_buffer);
+        gl.glBindBuffer(gl.GL_ELEMENT_ARRAY_BUFFER, index_buffer);
+        gl.glBufferData(
+            gl.GL_ELEMENT_ARRAY_BUFFER,
+            @intCast(@sizeOf(u32) * indices.len),
+            indices.ptr,
+            gl.GL_STATIC_DRAW,
+        );
+        const n_indices: i32 = @intCast(indices.len);
+
+        var vertex_array: u32 = undefined;
+        gl.glGenVertexArrays(1, &vertex_array);
+        gl.glBindVertexArray(vertex_array);
+        gl.glBindBuffer(gl.GL_ARRAY_BUFFER, vertex_buffer);
+        gl.glBindBuffer(gl.GL_ELEMENT_ARRAY_BUFFER, index_buffer);
+        VERTEX_TYPE.set_attributes();
+
+        return .{
+            .vertex_buffer = vertex_buffer,
+            .index_buffer = index_buffer,
+            .n_indices = n_indices,
+            .vertex_array = vertex_array,
+        };
+    }
+
+    pub fn draw(self: *const Self) void {
+        gl.glBindVertexArray(self.vertex_array);
+        gl.glDrawElements(gl.GL_TRIANGLES, self.n_indices, gl.GL_UNSIGNED_INT, null);
+    }
+};
+
+pub const Grid = struct {
+    buffer: if (builtin.target.os.tag == .emscripten) u32 else void,
+    vertex_array: if (builtin.target.os.tag == .emscripten) u32 else void,
+
+    const Self = @This();
+
+    pub fn init() Self {
+        if (builtin.target.os.tag == .emscripten) {
+            const planes = [_]math.Vec3{
+                math.Vec3{ .x = 1, .y = 1, .z = 0 },
+                math.Vec3{ .x = -1, .y = -1, .z = 0 },
+                math.Vec3{ .x = -1, .y = 1, .z = 0 },
+                math.Vec3{ .x = -1, .y = -1, .z = 0 },
+                math.Vec3{ .x = 1, .y = 1, .z = 0 },
+                math.Vec3{ .x = 1, .y = -1, .z = 0 },
+            };
+            var buffer: u32 = undefined;
+            gl.glGenBuffers(1, &buffer);
+            gl.glBindBuffer(gl.GL_ARRAY_BUFFER, buffer);
+            gl.glBufferData(
+                gl.GL_ARRAY_BUFFER,
+                @sizeOf(@TypeOf(planes)),
+                &planes,
+                gl.GL_STATIC_DRAW,
+            );
+
+            var vertex_array: u32 = undefined;
+            gl.glGenVertexArrays(1, &vertex_array);
+            gl.glBindVertexArray(vertex_array);
+            gl.glBindBuffer(gl.GL_ARRAY_BUFFER, buffer);
+            gl.glVertexAttribPointer(
+                0,
+                3,
+                gl.GL_FLOAT,
+                gl.GL_FALSE,
+                @sizeOf(math.Vec3),
+                @ptrFromInt(0),
+            );
+            gl.glEnableVertexAttribArray(0);
+            return .{ .buffer = buffer, .vertex_array = vertex_array };
+        } else {
+            return .{ .buffer = {}, .vertex_array = {} };
+        }
+    }
+
+    pub fn draw(self: *const Self) void {
+        if (builtin.target.os.tag == .emscripten) {
+            gl.glBindVertexArray(self.vertex_array);
+        }
+        gl.glDrawArrays(gl.GL_TRIANGLES, 0, 6);
+    }
+};
+
+pub const App = struct {
+    mesh_shader: Shader,
+    cube: Mesh,
     grid_shader: Shader,
+    grid: Grid,
 
     camera: Camera,
 
@@ -325,57 +428,8 @@ pub const App = struct {
         else
             Shader.init("resources/shaders/grid.vert", "resources/shaders/grid.frag");
 
-        var vertex_buffer: u32 = undefined;
-        gl.glGenBuffers(1, &vertex_buffer);
-        gl.glBindBuffer(gl.GL_ARRAY_BUFFER, vertex_buffer);
-        gl.glBufferData(
-            gl.GL_ARRAY_BUFFER,
-            @sizeOf(@TypeOf(mesh.Cube.VERTICES)),
-            &mesh.Cube.VERTICES,
-            gl.GL_STATIC_DRAW,
-        );
-
-        var index_buffer: u32 = undefined;
-        gl.glGenBuffers(1, &index_buffer);
-        gl.glBindBuffer(gl.GL_ELEMENT_ARRAY_BUFFER, index_buffer);
-        gl.glBufferData(
-            gl.GL_ELEMENT_ARRAY_BUFFER,
-            @sizeOf(@TypeOf(mesh.Cube.INDICES)),
-            &mesh.Cube.INDICES,
-            gl.GL_STATIC_DRAW,
-        );
-
-        const grid_planes = [_]math.Vec3{
-            math.Vec3{ .x = 1, .y = 1, .z = 0 },
-            math.Vec3{ .x = -1, .y = -1, .z = 0 },
-            math.Vec3{ .x = -1, .y = 1, .z = 0 },
-            math.Vec3{ .x = -1, .y = -1, .z = 0 },
-            math.Vec3{ .x = 1, .y = 1, .z = 0 },
-            math.Vec3{ .x = 1, .y = -1, .z = 0 },
-        };
-        var grid_buffer: u32 = undefined;
-        gl.glGenBuffers(1, &grid_buffer);
-        gl.glBindBuffer(gl.GL_ARRAY_BUFFER, grid_buffer);
-        gl.glBufferData(
-            gl.GL_ARRAY_BUFFER,
-            @sizeOf(@TypeOf(grid_planes)),
-            &grid_planes,
-            gl.GL_STATIC_DRAW,
-        );
-
-        var vertex_array: u32 = undefined;
-        gl.glGenVertexArrays(1, &vertex_array);
-        gl.glBindVertexArray(vertex_array);
-        gl.glBindBuffer(gl.GL_ARRAY_BUFFER, vertex_buffer);
-        gl.glBindBuffer(gl.GL_ELEMENT_ARRAY_BUFFER, index_buffer);
-        mesh.MeshVertex.set_attributes();
-
-        var grid_vertex_array: u32 = undefined;
-        gl.glGenVertexArrays(1, &grid_vertex_array);
-        gl.glBindVertexArray(grid_vertex_array);
-        gl.glBindBuffer(gl.GL_ARRAY_BUFFER, grid_buffer);
-        gl.glVertexAttribPointer(0, 3, gl.GL_FLOAT, gl.GL_FALSE, @sizeOf(math.Vec3), @ptrFromInt(0));
-        gl.glEnableVertexAttribArray(0);
+        const cube = Mesh.init(mesh.MeshVertex, &mesh.Cube.VERTICES, &mesh.Cube.INDICES);
+        const grid = Grid.init();
 
         // gl.glClipControl(gl.GL_LOWER_LEFT, gl.GL_ZERO_TO_ONE);
         gl.glEnable(gl.GL_DEPTH_TEST);
@@ -386,13 +440,10 @@ pub const App = struct {
         const camera: Camera = .{ .position = .{ .y = -10.0 } };
 
         return .{
-            .vertex_buffer = vertex_buffer,
-            .index_buffer = index_buffer,
             .mesh_shader = mesh_shader,
-            .grid_buffer = grid_buffer,
-            .grid_vertex_array = grid_vertex_array,
+            .cube = cube,
             .grid_shader = grid_shader,
-            .vertex_array = vertex_array,
+            .grid = grid,
             .camera = camera,
         };
     }
@@ -442,8 +493,7 @@ pub const App = struct {
             gl.glUniformMatrix4fv(view_loc, 1, gl.GL_FALSE, @ptrCast(&camera_view));
             gl.glUniformMatrix4fv(projection_loc, 1, gl.GL_FALSE, @ptrCast(&camera_projection));
             gl.glUniformMatrix4fv(model_loc, 1, gl.GL_FALSE, @ptrCast(&model));
-            gl.glBindVertexArray(self.vertex_array);
-            gl.glDrawElements(gl.GL_TRIANGLES, mesh.Cube.INDICES.len, gl.GL_UNSIGNED_INT, null);
+            self.cube.draw();
         }
 
         {
@@ -461,10 +511,9 @@ pub const App = struct {
                 const inverse_camera_projection = camera_projection.inverse();
                 gl.glUniformMatrix4fv(inverse_view_loc, 1, gl.GL_FALSE, @ptrCast(&inverse_camera_view));
                 gl.glUniformMatrix4fv(inverse_projection_loc, 1, gl.GL_FALSE, @ptrCast(&inverse_camera_projection));
-                gl.glBindVertexArray(self.grid_vertex_array);
             }
 
-            gl.glDrawArrays(gl.GL_TRIANGLES, 0, 6);
+            self.grid.draw();
         }
 
         const imgui_data = cimgui.igGetDrawData();
