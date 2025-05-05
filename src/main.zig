@@ -48,12 +48,12 @@ pub fn main() !void {
 
     _ = cimgui.igCreateContext(null);
     _ = cimgui.ImGui_ImplSDL3_InitForOpenGL(@ptrCast(window), context);
-
     const cimgli_opengl_version = if (builtin.target.os.tag == .emscripten)
         "#version 100"
     else
         "#version 450";
     _ = cimgui.ImGui_ImplOpenGL3_Init(cimgli_opengl_version);
+    const imgui_io = &cimgui.igGetIO_Nil()[0];
 
     gl.glViewport(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
 
@@ -89,7 +89,13 @@ pub fn main() !void {
             }
         }
         const mouse_pos = events.get_mouse_pos();
-        const new_events = events.parse_sdl_events(new_sdl_events, &app_events);
+        const new_events =
+            if (imgui_io.WantCaptureMouse or
+            imgui_io.WantCaptureKeyboard or
+            imgui_io.WantTextInput)
+                &.{}
+            else
+                events.parse_sdl_events(new_sdl_events, &app_events);
         app.update(new_events, mouse_pos, dt);
 
         sdl.assert(@src(), sdl.SDL_GL_SwapWindow(window));
