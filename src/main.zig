@@ -30,7 +30,7 @@ pub fn main() !void {
         "stygian",
         WINDOW_WIDTH,
         WINDOW_HEIGHT,
-        sdl.SDL_INIT_VIDEO | sdl.SDL_WINDOW_OPENGL,
+        sdl.SDL_WINDOW_OPENGL,
     ) orelse {
         log.err(@src(), "Cannot create a window: {s}", .{sdl.SDL_GetError()});
         return error.SDLCreateWindow;
@@ -39,6 +39,11 @@ pub fn main() !void {
 
     const context = sdl.SDL_GL_CreateContext(window);
     _ = sdl.SDL_GL_MakeCurrent(window, context);
+
+    log.info(@src(), "Vendor graphic card: {s}", .{gl.glGetString(gl.GL_VENDOR)});
+    log.info(@src(), "Renderer: {s}", .{gl.glGetString(gl.GL_RENDERER)});
+    log.info(@src(), "Version GL: {s}", .{gl.glGetString(gl.GL_VERSION)});
+    log.info(@src(), "Version GLSL: {s}", .{gl.glGetString(gl.GL_SHADING_LANGUAGE_VERSION)});
 
     if (!sdl.SDL_ShowWindow(window)) {
         log.err(@src(), "Cannot show a window: {s}", .{sdl.SDL_GetError()});
@@ -305,18 +310,26 @@ pub const Shader = struct {
 pub const App = struct {
     vertex_buffer: u32,
     index_buffer: u32,
-    shader: Shader,
+    mesh_shader: Shader,
     vertex_array: u32,
+    grid_buffer: u32,
+    grid_vertex_array: u32,
+    grid_shader: Shader,
 
     camera: Camera,
 
     const Self = @This();
 
     pub fn init() Self {
-        const shader = if (builtin.target.os.tag == .emscripten)
+        const mesh_shader = if (builtin.target.os.tag == .emscripten)
             Shader.init("resources/shaders/mesh_web.vert", "resources/shaders/mesh_web.frag")
         else
             Shader.init("resources/shaders/mesh.vert", "resources/shaders/mesh.frag");
+
+        const grid_shader = if (builtin.target.os.tag == .emscripten)
+            Shader.init("resources/shaders/grid_web.vert", "resources/shaders/grid_web.frag")
+        else
+            Shader.init("resources/shaders/grid.vert", "resources/shaders/grid.frag");
 
         var vertex_buffer: u32 = undefined;
         gl.glGenBuffers(1, &vertex_buffer);
@@ -338,24 +351,53 @@ pub const App = struct {
             gl.GL_STATIC_DRAW,
         );
 
+        const grid_planes = [_]math.Vec3{
+            math.Vec3{ .x = 1, .y = 1, .z = 0 },
+            math.Vec3{ .x = -1, .y = -1, .z = 0 },
+            math.Vec3{ .x = -1, .y = 1, .z = 0 },
+            math.Vec3{ .x = -1, .y = -1, .z = 0 },
+            math.Vec3{ .x = 1, .y = 1, .z = 0 },
+            math.Vec3{ .x = 1, .y = -1, .z = 0 },
+        };
+        var grid_buffer: u32 = undefined;
+        gl.glGenBuffers(1, &grid_buffer);
+        gl.glBindBuffer(gl.GL_ARRAY_BUFFER, grid_buffer);
+        gl.glBufferData(
+            gl.GL_ARRAY_BUFFER,
+            @sizeOf(@TypeOf(grid_planes)),
+            &grid_planes,
+            gl.GL_STATIC_DRAW,
+        );
+
         var vertex_array: u32 = undefined;
         gl.glGenVertexArrays(1, &vertex_array);
         gl.glBindVertexArray(vertex_array);
         gl.glBindBuffer(gl.GL_ARRAY_BUFFER, vertex_buffer);
         gl.glBindBuffer(gl.GL_ELEMENT_ARRAY_BUFFER, index_buffer);
-
         mesh.MeshVertex.set_attributes();
+
+        var grid_vertex_array: u32 = undefined;
+        gl.glGenVertexArrays(1, &grid_vertex_array);
+        gl.glBindVertexArray(grid_vertex_array);
+        gl.glBindBuffer(gl.GL_ARRAY_BUFFER, grid_buffer);
+        gl.glVertexAttribPointer(0, 3, gl.GL_FLOAT, gl.GL_FALSE, @sizeOf(math.Vec3), @ptrFromInt(0));
+        gl.glEnableVertexAttribArray(0);
 
         // gl.glClipControl(gl.GL_LOWER_LEFT, gl.GL_ZERO_TO_ONE);
         gl.glEnable(gl.GL_DEPTH_TEST);
+        gl.glEnable(gl.GL_BLEND);
         gl.glDepthFunc(gl.GL_GEQUAL);
+        gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA);
 
         const camera: Camera = .{ .position = .{ .y = -10.0 } };
 
         return .{
             .vertex_buffer = vertex_buffer,
             .index_buffer = index_buffer,
-            .shader = shader,
+            .mesh_shader = mesh_shader,
+            .grid_buffer = grid_buffer,
+            .grid_vertex_array = grid_vertex_array,
+            .grid_shader = grid_shader,
             .vertex_array = vertex_array,
             .camera = camera,
         };
@@ -397,16 +439,39 @@ pub const App = struct {
         };
         A.t += 0.5 * dt;
         const model = math.Mat4.rotation_z(A.t);
-        const view_loc = self.shader.get_uniform_location("view");
-        const projection_loc = self.shader.get_uniform_location("projection");
-        const model_loc = self.shader.get_uniform_location("model");
+        {
+            const view_loc = self.mesh_shader.get_uniform_location("view");
+            const projection_loc = self.mesh_shader.get_uniform_location("projection");
+            const model_loc = self.mesh_shader.get_uniform_location("model");
 
-        self.shader.use();
-        gl.glUniformMatrix4fv(view_loc, 1, gl.GL_FALSE, @ptrCast(&camera_view));
-        gl.glUniformMatrix4fv(projection_loc, 1, gl.GL_FALSE, @ptrCast(&camera_projection));
-        gl.glUniformMatrix4fv(model_loc, 1, gl.GL_FALSE, @ptrCast(&model));
-        gl.glBindVertexArray(self.vertex_array);
-        gl.glDrawElements(gl.GL_TRIANGLES, mesh.Cube.INDICES.len, gl.GL_UNSIGNED_INT, null);
+            self.mesh_shader.use();
+            gl.glUniformMatrix4fv(view_loc, 1, gl.GL_FALSE, @ptrCast(&camera_view));
+            gl.glUniformMatrix4fv(projection_loc, 1, gl.GL_FALSE, @ptrCast(&camera_projection));
+            gl.glUniformMatrix4fv(model_loc, 1, gl.GL_FALSE, @ptrCast(&model));
+            gl.glBindVertexArray(self.vertex_array);
+            gl.glDrawElements(gl.GL_TRIANGLES, mesh.Cube.INDICES.len, gl.GL_UNSIGNED_INT, null);
+        }
+
+        {
+            const view_loc = self.grid_shader.get_uniform_location("view");
+            const projection_loc = self.grid_shader.get_uniform_location("projection");
+
+            self.grid_shader.use();
+            gl.glUniformMatrix4fv(view_loc, 1, gl.GL_FALSE, @ptrCast(&camera_view));
+            gl.glUniformMatrix4fv(projection_loc, 1, gl.GL_FALSE, @ptrCast(&camera_projection));
+
+            if (builtin.target.os.tag == .emscripten) {
+                const inverse_view_loc = self.grid_shader.get_uniform_location("inverse_view");
+                const inverse_projection_loc = self.grid_shader.get_uniform_location("inverse_projection");
+                const inverse_camera_view = camera_view.inverse();
+                const inverse_camera_projection = camera_projection.inverse();
+                gl.glUniformMatrix4fv(inverse_view_loc, 1, gl.GL_FALSE, @ptrCast(&inverse_camera_view));
+                gl.glUniformMatrix4fv(inverse_projection_loc, 1, gl.GL_FALSE, @ptrCast(&inverse_camera_projection));
+                gl.glBindVertexArray(self.grid_vertex_array);
+            }
+
+            gl.glDrawArrays(gl.GL_TRIANGLES, 0, 6);
+        }
 
         const imgui_data = cimgui.igGetDrawData();
         cimgui.ImGui_ImplOpenGL3_RenderDrawData(imgui_data);
