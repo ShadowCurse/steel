@@ -62,6 +62,7 @@ pub fn main() !void {
 
     gl.glEnable(gl.GL_DEPTH_TEST);
     gl.glEnable(gl.GL_BLEND);
+    gl.glEnable(gl.GL_CULL_FACE);
     gl.glDepthFunc(gl.GL_GEQUAL);
     gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA);
 
@@ -400,11 +401,11 @@ pub const Grid = struct {
         if (builtin.target.os.tag == .emscripten) {
             const planes = [_]math.Vec3{
                 math.Vec3{ .x = 1, .y = 1, .z = 0 },
-                math.Vec3{ .x = -1, .y = -1, .z = 0 },
                 math.Vec3{ .x = -1, .y = 1, .z = 0 },
                 math.Vec3{ .x = -1, .y = -1, .z = 0 },
-                math.Vec3{ .x = 1, .y = 1, .z = 0 },
+                math.Vec3{ .x = -1, .y = -1, .z = 0 },
                 math.Vec3{ .x = 1, .y = -1, .z = 0 },
+                math.Vec3{ .x = 1, .y = 1, .z = 0 },
             };
             var buffer: u32 = undefined;
             gl.glGenBuffers(1, &buffer);

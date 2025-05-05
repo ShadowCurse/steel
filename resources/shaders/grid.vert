@@ -7,8 +7,8 @@ uniform mat4 projection;
 uniform mat4 view;
 
 vec3 grid_planes[6] = vec3[](
-    vec3(1, 1, 0), vec3(-1, -1, 0), vec3(-1, 1, 0),
-    vec3(-1, -1, 0), vec3(1, 1, 0), vec3(1, -1, 0)
+    vec3(1, 1, 0), vec3(-1, 1, 0), vec3(-1, -1, 0),
+    vec3(-1, -1, 0), vec3(1, -1, 0), vec3(1, 1, 0)
 );
 
 vec3 clip_to_world(vec3 point) {
