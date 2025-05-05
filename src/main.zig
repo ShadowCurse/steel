@@ -98,6 +98,7 @@ pub const Camera = struct {
     velocity: math.Vec3 = .{},
     speed: f32 = 5.0,
     active: bool = false,
+    top_down: bool = false,
 
     const ORIENTATION = math.Quat.from_rotation_axis(.X, .NEG_Z, .Y);
     const SENSITIVITY = 0.5;
@@ -125,17 +126,25 @@ pub const Camera = struct {
                     },
                     .Motion => |motion| {
                         if (self.active) {
-                            self.yaw -= motion.x * Self.SENSITIVITY * dt;
-                            self.pitch -= motion.y * Self.SENSITIVITY * dt;
-                            if (std.math.pi / 2.0 < self.pitch) {
-                                self.pitch = std.math.pi / 2.0;
-                            }
-                            if (self.pitch < -std.math.pi / 2.0) {
-                                self.pitch = -std.math.pi / 2.0;
+                            if (self.top_down) {
+                                self.position.x -= motion.x * Self.SENSITIVITY * dt;
+                                self.position.y += motion.y * Self.SENSITIVITY * dt;
+                            } else {
+                                self.yaw -= motion.x * Self.SENSITIVITY * dt;
+                                self.pitch -= motion.y * Self.SENSITIVITY * dt;
+                                if (std.math.pi / 2.0 < self.pitch) {
+                                    self.pitch = std.math.pi / 2.0;
+                                }
+                                if (self.pitch < -std.math.pi / 2.0) {
+                                    self.pitch = -std.math.pi / 2.0;
+                                }
                             }
                         }
                     },
-                    else => {},
+                    .Wheel => |wheel| {
+                        if (self.top_down)
+                            self.position.z -= wheel.amount * Self.SENSITIVITY * 50.0 * dt;
+                    },
                 }
             },
             else => {},
@@ -169,6 +178,15 @@ pub const Camera = struct {
         // flip Y for opengl
         m.j.y *= -1.0;
         return m;
+    }
+
+    pub fn imgui_options(self: *Self) void {
+        _ = cimgui.igSliderFloat3("position", @ptrCast(&self.position), -100.0, 100.0, null, 0);
+        _ = cimgui.igSliderFloat("pitch", @ptrCast(&self.pitch), -100.0, 100.0, null, 0);
+        _ = cimgui.igSliderFloat("yaw", @ptrCast(&self.yaw), -100.0, 100.0, null, 0);
+        _ = cimgui.igSliderFloat("fovy", @ptrCast(&self.fovy), -100.0, 100.0, null, 0);
+        _ = cimgui.igSliderFloat("near", @ptrCast(&self.near), -100.0, 100.0, null, 0);
+        _ = cimgui.igSliderFloat("far", @ptrCast(&self.far), -100.0, 100.0, null, 0);
     }
 };
 
@@ -413,7 +431,9 @@ pub const App = struct {
     grid_shader: Shader,
     grid: Grid,
 
-    camera: Camera,
+    floating_camera: Camera,
+    topdown_camera: Camera,
+    use_topdown_camera: bool = false,
 
     const Self = @This();
 
@@ -439,21 +459,28 @@ pub const App = struct {
         gl.glDepthFunc(gl.GL_GEQUAL);
         gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA);
 
-        const camera: Camera = .{ .position = .{ .y = -10.0 } };
+        const floating_camera: Camera = .{ .position = .{ .y = -10.0 } };
+        const topdown_camera: Camera = .{
+            .position = .{ .z = 10.0 },
+            .pitch = -std.math.pi / 2.0,
+            .top_down = true,
+        };
 
         return .{
             .mesh_shader = mesh_shader,
             .cube = cube,
             .grid_shader = grid_shader,
             .grid = grid,
-            .camera = camera,
+            .floating_camera = floating_camera,
+            .topdown_camera = topdown_camera,
         };
     }
 
     pub fn update(self: *Self, new_events: []const events.Event, dt: f32) void {
+        const camera = if (self.use_topdown_camera) &self.topdown_camera else &self.floating_camera;
         for (new_events) |event|
-            self.camera.process_input(event, dt);
-        self.camera.move(dt);
+            camera.process_input(event, dt);
+        camera.move(dt);
 
         cimgui.ImGui_ImplOpenGL3_NewFrame();
         cimgui.ImGui_ImplSDL3_NewFrame();
@@ -464,14 +491,19 @@ pub const App = struct {
             _ = cimgui.igBegin("options", &open, 0);
             defer cimgui.igEnd();
 
-            _ = cimgui.igSliderFloat3(
-                "camera position",
-                @ptrCast(&self.camera.position),
-                -100.0,
-                100.0,
-                null,
-                0,
-            );
+            _ = cimgui.igCheckbox("Use top down camera", &self.use_topdown_camera);
+            _ = cimgui.igSeparatorText("Floating camera");
+            {
+                cimgui.igPushID_Int(0);
+                defer cimgui.igPopID();
+                self.floating_camera.imgui_options();
+            }
+            _ = cimgui.igSeparatorText("Topdown camera");
+            {
+                cimgui.igPushID_Int(1);
+                defer cimgui.igPopID();
+                self.topdown_camera.imgui_options();
+            }
         }
         cimgui.igRender();
 
@@ -479,8 +511,8 @@ pub const App = struct {
         gl.glClearColor(0.0, 0.0, 0.0, 1.0);
         gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT);
 
-        const camera_view = self.camera.transform().inverse();
-        const camera_projection = self.camera.projection();
+        const camera_view = camera.transform().inverse();
+        const camera_projection = camera.projection();
         const A = struct {
             var t: f32 = 0.0;
         };
