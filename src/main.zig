@@ -431,7 +431,9 @@ pub const App = struct {
         const cube = Mesh.init(mesh.MeshVertex, &mesh.Cube.VERTICES, &mesh.Cube.INDICES);
         const grid = Grid.init();
 
-        // gl.glClipControl(gl.GL_LOWER_LEFT, gl.GL_ZERO_TO_ONE);
+        if (builtin.target.os.tag != .emscripten)
+            gl.glClipControl(gl.GL_LOWER_LEFT, gl.GL_ZERO_TO_ONE);
+
         gl.glEnable(gl.GL_DEPTH_TEST);
         gl.glEnable(gl.GL_BLEND);
         gl.glDepthFunc(gl.GL_GEQUAL);

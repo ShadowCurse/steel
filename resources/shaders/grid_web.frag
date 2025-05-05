@@ -63,6 +63,7 @@ void main() {
     vec4 color = (lod_0_color + lod_1_color) * float(t > 0.0);
     color.a *= depth * 100.0;
 
-    gl_FragDepthEXT = depth;
+    // as there is no glClipControl on web, manually convert depth to 0..1 range
+    gl_FragDepthEXT = (depth + 1.0) / 2.0;
     gl_FragColor = color;
 }
