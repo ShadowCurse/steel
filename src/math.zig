@@ -159,10 +159,6 @@ pub const Vec3 = extern struct {
         };
     }
 
-    pub inline fn len_squared(self: Vec3) f32 {
-        return self.dot(self);
-    }
-
     pub inline fn mul_f32(self: Vec3, n: f32) Vec3 {
         return .{
             .x = self.x * n,
@@ -177,6 +173,26 @@ pub const Vec3 = extern struct {
             .y = self.y / n,
             .z = self.z / n,
         };
+    }
+
+    pub inline fn div_f32(self: Vec3, n: f32) Vec3 {
+        return .{
+            .x = self.x / n,
+            .y = self.y / n,
+            .z = self.z / n,
+        };
+    }
+
+    pub inline fn len_squared(self: Vec3) f32 {
+        return self.dot(self);
+    }
+
+    pub inline fn len(self: Vec3) f32 {
+        return @sqrt(self.dot(self));
+    }
+
+    pub inline fn normalize(self: Vec3) Vec3 {
+        return self.div_f32(self.len());
     }
 
     pub inline fn dot(self: Vec3, other: Vec3) f32 {
@@ -241,6 +257,15 @@ pub const Vec4 = extern struct {
             .y = self.y * v,
             .z = self.z * v,
             .w = self.w * v,
+        };
+    }
+
+    pub inline fn div_f32(self: Vec4, v: f32) Vec4 {
+        return .{
+            .x = self.x / v,
+            .y = self.y / v,
+            .z = self.z / v,
+            .w = self.w / v,
         };
     }
 

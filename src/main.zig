@@ -79,9 +79,9 @@ pub fn main() !void {
                 else => {},
             }
         }
-
+        const mouse_pos = events.get_mouse_pos();
         const new_events = events.parse_sdl_events(new_sdl_events, &app_events);
-        app.update(new_events, dt);
+        app.update(new_events, mouse_pos, dt);
 
         sdl.assert(@src(), sdl.SDL_GL_SwapWindow(window));
     }
@@ -99,6 +99,11 @@ pub const Camera = struct {
     speed: f32 = 5.0,
     active: bool = false,
     top_down: bool = false,
+
+    view: math.Mat4 = .{},
+    projection: math.Mat4 = .{},
+    inverse_view: math.Mat4 = .{},
+    inverse_projection: math.Mat4 = .{},
 
     const ORIENTATION = math.Quat.from_rotation_axis(.X, .NEG_Z, .Y);
     const SENSITIVITY = 0.5;
@@ -156,6 +161,11 @@ pub const Camera = struct {
         const velocity = self.velocity.mul_f32(self.speed * dt).extend(1.0);
         const delta = rotation.mul_vec4(velocity);
         self.position = self.position.add(delta.shrink());
+
+        self.inverse_view = self.transform();
+        self.view = self.inverse_view.inverse();
+        self.projection = self.perspective();
+        self.inverse_projection = self.projection.inverse();
     }
 
     pub fn transform(self: *const Self) math.Mat4 {
@@ -168,7 +178,7 @@ pub const Camera = struct {
         return r_yaw.mul(r_pitch).mul(Self.ORIENTATION).to_mat4();
     }
 
-    pub fn projection(self: *const Self) math.Mat4 {
+    pub fn perspective(self: *const Self) math.Mat4 {
         var m = math.Mat4.perspective(
             self.fovy,
             @as(f32, @floatFromInt(WINDOW_WIDTH)) / @as(f32, @floatFromInt(WINDOW_HEIGHT)),
@@ -425,6 +435,16 @@ pub const Grid = struct {
     }
 };
 
+pub fn mouse_to_xy(camera: *const Camera, mouse_pos: math.Vec3) math.Vec3 {
+    const world_near =
+        camera.inverse_view.mul(camera.inverse_projection).mul_vec4(mouse_pos.extend(1.0));
+    const world_near_world = world_near.shrink().div_f32(world_near.w);
+    const forward = world_near_world.sub(camera.position).normalize();
+    const t = -camera.position.z / forward.z;
+    const xy = camera.position.add(forward.mul_f32(t));
+    return xy;
+}
+
 pub const App = struct {
     mesh_shader: Shader,
     cube: Mesh,
@@ -476,8 +496,16 @@ pub const App = struct {
         };
     }
 
-    pub fn update(self: *Self, new_events: []const events.Event, dt: f32) void {
-        const camera = if (self.use_topdown_camera) &self.topdown_camera else &self.floating_camera;
+    pub fn update(
+        self: *Self,
+        new_events: []const events.Event,
+        mouse_pos: events.MousePosition,
+        dt: f32,
+    ) void {
+        const camera = if (self.use_topdown_camera)
+            &self.topdown_camera
+        else
+            &self.floating_camera;
         for (new_events) |event|
             camera.process_input(event, dt);
         camera.move(dt);
@@ -486,11 +514,33 @@ pub const App = struct {
         cimgui.ImGui_ImplSDL3_NewFrame();
         cimgui.igNewFrame();
 
+        const A = struct {
+            var t: f32 = 0.0;
+        };
+        A.t += 0.5 * dt;
+        const model = math.Mat4.rotation_z(A.t);
+
+        const mouse_clip = math.Vec3{
+            .x = (@as(f32, @floatFromInt(mouse_pos.x)) / WINDOW_WIDTH * 2.0) - 1.0,
+            .y = -((@as(f32, @floatFromInt(mouse_pos.y)) / WINDOW_HEIGHT * 2.0) - 1.0),
+            .z = 1.0,
+        };
+        const mouse_xy = mouse_to_xy(camera, mouse_clip);
+        const model_xy = math.Mat4.IDENDITY.translate(mouse_xy);
+
         {
             var open: bool = true;
             _ = cimgui.igBegin("options", &open, 0);
             defer cimgui.igEnd();
 
+            _ = cimgui.igSeparatorText("Mouse");
+            _ = cimgui.igValue_Uint("x", mouse_pos.x);
+            _ = cimgui.igValue_Uint("y", mouse_pos.y);
+            _ = cimgui.igSeparatorText("Mouse XY");
+            _ = cimgui.igValue_Float("x", mouse_clip.x, null);
+            _ = cimgui.igValue_Float("y", mouse_clip.y, null);
+
+            _ = cimgui.igSeparatorText("Camera");
             _ = cimgui.igCheckbox("Use top down camera", &self.use_topdown_camera);
             _ = cimgui.igSeparatorText("Floating camera");
             {
@@ -511,22 +561,27 @@ pub const App = struct {
         gl.glClearColor(0.0, 0.0, 0.0, 1.0);
         gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT);
 
-        const camera_view = camera.transform().inverse();
-        const camera_projection = camera.projection();
-        const A = struct {
-            var t: f32 = 0.0;
-        };
-        A.t += 0.5 * dt;
-        const model = math.Mat4.rotation_z(A.t);
         {
             const view_loc = self.mesh_shader.get_uniform_location("view");
             const projection_loc = self.mesh_shader.get_uniform_location("projection");
             const model_loc = self.mesh_shader.get_uniform_location("model");
 
             self.mesh_shader.use();
-            gl.glUniformMatrix4fv(view_loc, 1, gl.GL_FALSE, @ptrCast(&camera_view));
-            gl.glUniformMatrix4fv(projection_loc, 1, gl.GL_FALSE, @ptrCast(&camera_projection));
+            gl.glUniformMatrix4fv(view_loc, 1, gl.GL_FALSE, @ptrCast(&camera.view));
+            gl.glUniformMatrix4fv(projection_loc, 1, gl.GL_FALSE, @ptrCast(&camera.projection));
             gl.glUniformMatrix4fv(model_loc, 1, gl.GL_FALSE, @ptrCast(&model));
+            self.cube.draw();
+        }
+
+        {
+            const view_loc = self.mesh_shader.get_uniform_location("view");
+            const projection_loc = self.mesh_shader.get_uniform_location("projection");
+            const model_loc = self.mesh_shader.get_uniform_location("model");
+
+            self.mesh_shader.use();
+            gl.glUniformMatrix4fv(view_loc, 1, gl.GL_FALSE, @ptrCast(&camera.view));
+            gl.glUniformMatrix4fv(projection_loc, 1, gl.GL_FALSE, @ptrCast(&camera.projection));
+            gl.glUniformMatrix4fv(model_loc, 1, gl.GL_FALSE, @ptrCast(&model_xy));
             self.cube.draw();
         }
 
@@ -535,16 +590,24 @@ pub const App = struct {
             const projection_loc = self.grid_shader.get_uniform_location("projection");
 
             self.grid_shader.use();
-            gl.glUniformMatrix4fv(view_loc, 1, gl.GL_FALSE, @ptrCast(&camera_view));
-            gl.glUniformMatrix4fv(projection_loc, 1, gl.GL_FALSE, @ptrCast(&camera_projection));
+            gl.glUniformMatrix4fv(view_loc, 1, gl.GL_FALSE, @ptrCast(&camera.view));
+            gl.glUniformMatrix4fv(projection_loc, 1, gl.GL_FALSE, @ptrCast(&camera.projection));
 
             if (builtin.target.os.tag == .emscripten) {
                 const inverse_view_loc = self.grid_shader.get_uniform_location("inverse_view");
                 const inverse_projection_loc = self.grid_shader.get_uniform_location("inverse_projection");
-                const inverse_camera_view = camera_view.inverse();
-                const inverse_camera_projection = camera_projection.inverse();
-                gl.glUniformMatrix4fv(inverse_view_loc, 1, gl.GL_FALSE, @ptrCast(&inverse_camera_view));
-                gl.glUniformMatrix4fv(inverse_projection_loc, 1, gl.GL_FALSE, @ptrCast(&inverse_camera_projection));
+                gl.glUniformMatrix4fv(
+                    inverse_view_loc,
+                    1,
+                    gl.GL_FALSE,
+                    @ptrCast(&camera.inverse_view),
+                );
+                gl.glUniformMatrix4fv(
+                    inverse_projection_loc,
+                    1,
+                    gl.GL_FALSE,
+                    @ptrCast(&camera.inverse_projection),
+                );
             }
 
             self.grid.draw();

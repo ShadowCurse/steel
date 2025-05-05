@@ -4,6 +4,17 @@ const sdl = @import("bindings/sdl.zig");
 
 pub const MAX_EVENTS = 8;
 
+pub const MousePosition = struct {
+    x: u32,
+    y: u32,
+};
+pub fn get_mouse_pos() MousePosition {
+    var x: f32 = undefined;
+    var y: f32 = undefined;
+    _ = sdl.SDL_GetMouseState(&x, &y);
+    return .{ .x = @intFromFloat(@max(0.0, x)), .y = @intFromFloat(@max(0.0, y)) };
+}
+
 pub fn get_sdl_events(events: *[MAX_EVENTS]sdl.SDL_Event) []const sdl.SDL_Event {
     var num_events: u32 = 0;
     while (num_events < events.len and sdl.SDL_PollEvent(&events[num_events])) {
