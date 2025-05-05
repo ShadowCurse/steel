@@ -8,6 +8,7 @@ varying vec3 f_far;
 
 uniform mat4 projection;
 uniform mat4 view;
+uniform float scale;
 
 #define AXIS_LINE_WIDTH 1.0
 #define DEFAULT_LINE_COLOR vec3(0.2, 0.2, 0.2)
@@ -50,9 +51,9 @@ void main() {
     float lod_fade = fract(lod_level);
 
     // high dencity
-    float lod_0 = pow(10.0, floor(lod_level)) / 10.0;
+    float lod_0 = pow(10.0, floor(lod_level)) / scale;
     // low dencity
-    float lod_1 = lod_0 * 10.0;
+    float lod_1 = lod_0 * scale;
 
     vec4 lod_0_color = grid_point_color(world_pos, lod_0);
     lod_0_color.a *= 1.0 - lod_fade;

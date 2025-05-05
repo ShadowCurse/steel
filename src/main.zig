@@ -450,6 +450,7 @@ pub const App = struct {
     cube: Mesh,
     grid_shader: Shader,
     grid: Grid,
+    grid_scale: f32 = 5.0,
 
     floating_camera: Camera,
     topdown_camera: Camera,
@@ -554,6 +555,9 @@ pub const App = struct {
                 defer cimgui.igPopID();
                 self.topdown_camera.imgui_options();
             }
+
+            _ = cimgui.igSeparatorText("Grid scale");
+            _ = cimgui.igDragFloat("scale", &self.grid_scale, 0.1, 1.0, 100.0, null, 0);
         }
         cimgui.igRender();
 
@@ -588,10 +592,12 @@ pub const App = struct {
         {
             const view_loc = self.grid_shader.get_uniform_location("view");
             const projection_loc = self.grid_shader.get_uniform_location("projection");
+            const scale_loc = self.grid_shader.get_uniform_location("scale");
 
             self.grid_shader.use();
             gl.glUniformMatrix4fv(view_loc, 1, gl.GL_FALSE, @ptrCast(&camera.view));
             gl.glUniformMatrix4fv(projection_loc, 1, gl.GL_FALSE, @ptrCast(&camera.projection));
+            gl.glUniform1f(scale_loc, self.grid_scale);
 
             if (builtin.target.os.tag == .emscripten) {
                 const inverse_view_loc = self.grid_shader.get_uniform_location("inverse_view");
