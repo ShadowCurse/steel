@@ -18,16 +18,13 @@ pub const log_options = log.Options{
 };
 
 pub fn main() !void {
-    if (!sdl.SDL_Init(sdl.SDL_INIT_AUDIO)) {
-        log.err(@src(), "Cannot init SDL: {s}", .{sdl.SDL_GetError()});
-        return error.SDLInit;
-    }
+    sdl.assert(@src(), sdl.SDL_Init(sdl.SDL_INIT_AUDIO | sdl.SDL_INIT_VIDEO));
 
-    // for 32bit depth
-    _ = sdl.SDL_GL_SetAttribute(sdl.SDL_GL_DEPTH_SIZE, 32);
+    // for 24bit depth
+    sdl.assert(@src(), sdl.SDL_GL_SetAttribute(sdl.SDL_GL_DEPTH_SIZE, 24));
 
     const window = sdl.SDL_CreateWindow(
-        "stygian",
+        "steel",
         WINDOW_WIDTH,
         WINDOW_HEIGHT,
         sdl.SDL_WINDOW_OPENGL,
@@ -35,20 +32,17 @@ pub fn main() !void {
         log.err(@src(), "Cannot create a window: {s}", .{sdl.SDL_GetError()});
         return error.SDLCreateWindow;
     };
-    _ = sdl.SDL_SetWindowResizable(window, false);
+    sdl.assert(@src(), sdl.SDL_SetWindowResizable(window, false));
 
     const context = sdl.SDL_GL_CreateContext(window);
-    _ = sdl.SDL_GL_MakeCurrent(window, context);
+    sdl.assert(@src(), sdl.SDL_GL_MakeCurrent(window, context));
 
     log.info(@src(), "Vendor graphic card: {s}", .{gl.glGetString(gl.GL_VENDOR)});
     log.info(@src(), "Renderer: {s}", .{gl.glGetString(gl.GL_RENDERER)});
     log.info(@src(), "Version GL: {s}", .{gl.glGetString(gl.GL_VERSION)});
     log.info(@src(), "Version GLSL: {s}", .{gl.glGetString(gl.GL_SHADING_LANGUAGE_VERSION)});
 
-    if (!sdl.SDL_ShowWindow(window)) {
-        log.err(@src(), "Cannot show a window: {s}", .{sdl.SDL_GetError()});
-        return error.SDLShowWindow;
-    }
+    sdl.assert(@src(), sdl.SDL_ShowWindow(window));
 
     _ = cimgui.igCreateContext(null);
     _ = cimgui.ImGui_ImplSDL3_InitForOpenGL(@ptrCast(window), context);
@@ -87,7 +81,7 @@ pub fn main() !void {
         const new_events = events.parse_sdl_events(new_sdl_events, &app_events);
         app.update(new_events, dt);
 
-        _ = sdl.SDL_GL_SwapWindow(window);
+        sdl.assert(@src(), sdl.SDL_GL_SwapWindow(window));
     }
 }
 
