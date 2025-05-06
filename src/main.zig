@@ -233,7 +233,7 @@ pub const App = struct {
     cube: Mesh,
     grid_shader: Shader,
     grid: Grid,
-    grid_scale: f32 = 5.0,
+    grid_scale: f32 = 10.0,
 
     floating_camera: Camera,
     topdown_camera: Camera,
@@ -302,7 +302,12 @@ pub const App = struct {
             .z = 1.0,
         };
         const mouse_xy = mouse_to_xy(camera, mouse_clip);
-        const model_xy = math.Mat4.IDENDITY.translate(mouse_xy);
+        const grid_xy = math.Vec3{
+            .x = @floor(mouse_xy.x) + 0.5,
+            .y = @floor(mouse_xy.y) + 0.5,
+            .z = 0.0,
+        };
+        const model_xy = math.Mat4.IDENDITY.translate(grid_xy);
 
         {
             var open: bool = true;
@@ -313,8 +318,11 @@ pub const App = struct {
             _ = cimgui.igValue_Uint("x", mouse_pos.x);
             _ = cimgui.igValue_Uint("y", mouse_pos.y);
             _ = cimgui.igSeparatorText("Mouse XY");
-            _ = cimgui.igValue_Float("x", mouse_clip.x, null);
-            _ = cimgui.igValue_Float("y", mouse_clip.y, null);
+            _ = cimgui.igValue_Float("x", mouse_xy.x, null);
+            _ = cimgui.igValue_Float("y", mouse_xy.y, null);
+            _ = cimgui.igSeparatorText("Mouse Grid XY");
+            _ = cimgui.igValue_Float("x", grid_xy.x, null);
+            _ = cimgui.igValue_Float("y", grid_xy.y, null);
 
             _ = cimgui.igSeparatorText("Camera");
             _ = cimgui.igCheckbox("Use top down camera", &self.use_topdown_camera);
