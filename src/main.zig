@@ -14,6 +14,9 @@ const Shader = rendering.Shader;
 const Mesh = rendering.Mesh;
 const Grid = rendering.Grid;
 
+const Allocator = std.mem.Allocator;
+const DebugAllocator = std.heap.DebugAllocator(.{});
+
 const WINDOW_WIDTH = 1280;
 const WINDOW_HEIGHT = 720;
 
@@ -69,7 +72,10 @@ pub fn main() !void {
     gl.glDepthFunc(gl.GL_GEQUAL);
     gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA);
 
-    var app = App.init();
+    var gpa = DebugAllocator{};
+    const allocator = gpa.allocator();
+
+    var app = App.init(allocator);
     var stop: bool = false;
 
     var app_events: [events.MAX_EVENTS]events.Event = undefined;
@@ -99,7 +105,7 @@ pub fn main() !void {
                 &.{}
             else
                 events.parse_sdl_events(new_sdl_events, &app_events);
-        app.update(new_events, mouse_pos, dt);
+        try app.update(new_events, mouse_pos, dt);
 
         sdl.assert(@src(), sdl.SDL_GL_SwapWindow(window));
     }
@@ -270,6 +276,8 @@ pub const Camera = struct {
 };
 
 pub const App = struct {
+    allocator: Allocator,
+
     mesh_shader: Shader,
     cube: Mesh,
     grid_shader: Shader,
@@ -280,9 +288,11 @@ pub const App = struct {
     topdown_camera: Camera,
     use_topdown_camera: bool = false,
 
+    cubes: std.ArrayListUnmanaged(math.Mat4) = .empty,
+
     const Self = @This();
 
-    pub fn init() Self {
+    pub fn init(allocator: Allocator) Self {
         const mesh_shader = if (builtin.target.os.tag == .emscripten)
             Shader.init("resources/shaders/mesh_web.vert", "resources/shaders/mesh_web.frag")
         else
@@ -304,6 +314,7 @@ pub const App = struct {
         };
 
         return .{
+            .allocator = allocator,
             .mesh_shader = mesh_shader,
             .cube = cube,
             .grid_shader = grid_shader,
@@ -318,24 +329,38 @@ pub const App = struct {
         new_events: []const events.Event,
         mouse_pos: events.MousePosition,
         dt: f32,
-    ) void {
+    ) !void {
         const camera = if (self.use_topdown_camera)
             &self.topdown_camera
         else
             &self.floating_camera;
-        for (new_events) |event|
+
+        var lmb_pressed: bool = false;
+        var rmb_pressed: bool = false;
+        for (new_events) |event| {
             camera.process_input(event, dt);
+
+            switch (event) {
+                .Mouse => |mouse| {
+                    switch (mouse) {
+                        .Button => |button| {
+                            switch (button.key) {
+                                .LMB => lmb_pressed = button.type == .Pressed,
+                                .RMB => rmb_pressed = button.type == .Pressed,
+                                else => {},
+                            }
+                        },
+                        else => {},
+                    }
+                },
+                else => {},
+            }
+        }
         camera.move(dt);
 
         cimgui.ImGui_ImplOpenGL3_NewFrame();
         cimgui.ImGui_ImplSDL3_NewFrame();
         cimgui.igNewFrame();
-
-        const A = struct {
-            var t: f32 = 0.0;
-        };
-        A.t += 0.5 * dt;
-        const model = math.Mat4.rotation_z(A.t);
 
         const mouse_clip = math.Vec3{
             .x = (@as(f32, @floatFromInt(mouse_pos.x)) / WINDOW_WIDTH * 2.0) - 1.0,
@@ -349,6 +374,11 @@ pub const App = struct {
             .z = 0.0,
         };
         const model_xy = math.Mat4.IDENDITY.translate(grid_xy);
+
+        if (lmb_pressed)
+            try self.add_cube(model_xy);
+        if (rmb_pressed)
+            try self.remove_cube(model_xy);
 
         {
             var open: bool = true;
@@ -382,6 +412,9 @@ pub const App = struct {
 
             _ = cimgui.igSeparatorText("Grid scale");
             _ = cimgui.igDragFloat("scale", &self.grid_scale, 0.1, 1.0, 100.0, null, 0);
+
+            _ = cimgui.igSeparatorText("Total cubes");
+            _ = cimgui.igValue_Uint("n", @intCast(self.cubes.items.len));
         }
         cimgui.igRender();
 
@@ -389,7 +422,7 @@ pub const App = struct {
         gl.glClearColor(0.0, 0.0, 0.0, 1.0);
         gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT);
 
-        {
+        for (self.cubes.items) |cube| {
             const view_loc = self.mesh_shader.get_uniform_location("view");
             const projection_loc = self.mesh_shader.get_uniform_location("projection");
             const model_loc = self.mesh_shader.get_uniform_location("model");
@@ -397,10 +430,21 @@ pub const App = struct {
             self.mesh_shader.use();
             gl.glUniformMatrix4fv(view_loc, 1, gl.GL_FALSE, @ptrCast(&camera.view));
             gl.glUniformMatrix4fv(projection_loc, 1, gl.GL_FALSE, @ptrCast(&camera.projection));
-            gl.glUniformMatrix4fv(model_loc, 1, gl.GL_FALSE, @ptrCast(&model));
+            gl.glUniformMatrix4fv(model_loc, 1, gl.GL_FALSE, @ptrCast(&cube));
             self.cube.draw();
         }
-
+        // {
+        //     const view_loc = self.mesh_shader.get_uniform_location("view");
+        //     const projection_loc = self.mesh_shader.get_uniform_location("projection");
+        //     const model_loc = self.mesh_shader.get_uniform_location("model");
+        //
+        //     self.mesh_shader.use();
+        //     gl.glUniformMatrix4fv(view_loc, 1, gl.GL_FALSE, @ptrCast(&camera.view));
+        //     gl.glUniformMatrix4fv(projection_loc, 1, gl.GL_FALSE, @ptrCast(&camera.projection));
+        //     gl.glUniformMatrix4fv(model_loc, 1, gl.GL_FALSE, @ptrCast(&model));
+        //     self.cube.draw();
+        // }
+        //
         {
             const view_loc = self.mesh_shader.get_uniform_location("view");
             const projection_loc = self.mesh_shader.get_uniform_location("projection");
@@ -445,5 +489,17 @@ pub const App = struct {
 
         const imgui_data = cimgui.igGetDrawData();
         cimgui.ImGui_ImplOpenGL3_RenderDrawData(imgui_data);
+    }
+
+    pub fn add_cube(self: *Self, cube: math.Mat4) !void {
+        for (self.cubes.items) |c|
+            if (c.eq(cube)) return;
+        try self.cubes.append(self.allocator, cube);
+    }
+
+    pub fn remove_cube(self: *Self, cube: math.Mat4) !void {
+        for (self.cubes.items, 0..) |c, i| {
+            if (c.eq(cube)) _ = self.cubes.swapRemove(i);
+        }
     }
 };
