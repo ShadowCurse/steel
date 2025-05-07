@@ -109,9 +109,12 @@ pub const Camera = struct {
     position: math.Vec3 = .{},
     pitch: f32 = 0.0,
     yaw: f32 = 0.0,
+
     fovy: f32 = std.math.pi / 2.0,
     near: f32 = 0.1,
     far: f32 = 10000.0,
+
+    zoom: f32 = 50.0,
 
     velocity: math.Vec3 = .{},
     speed: f32 = 5.0,
@@ -125,6 +128,7 @@ pub const Camera = struct {
 
     const ORIENTATION = math.Quat.from_rotation_axis(.X, .NEG_Z, .Y);
     const SENSITIVITY = 0.5;
+    const ORTHO_DEPTH = 100.0;
 
     const Self = @This();
 
@@ -132,14 +136,24 @@ pub const Camera = struct {
         switch (event) {
             .Keyboard => |key| {
                 const value: f32 = if (key.type == .Pressed) 1.0 else 0.0;
-                switch (key.key) {
-                    events.KeybordKeyScancode.W => self.velocity.z = value,
-                    events.KeybordKeyScancode.S => self.velocity.z = -value,
-                    events.KeybordKeyScancode.A => self.velocity.x = -value,
-                    events.KeybordKeyScancode.D => self.velocity.x = value,
-                    events.KeybordKeyScancode.SPACE => self.velocity.y = -value,
-                    events.KeybordKeyScancode.LCTRL => self.velocity.y = value,
-                    else => {},
+                if (self.top_down) {
+                    switch (key.key) {
+                        events.KeybordKeyScancode.W => self.velocity.y = -value,
+                        events.KeybordKeyScancode.S => self.velocity.y = value,
+                        events.KeybordKeyScancode.A => self.velocity.x = -value,
+                        events.KeybordKeyScancode.D => self.velocity.x = value,
+                        else => {},
+                    }
+                } else {
+                    switch (key.key) {
+                        events.KeybordKeyScancode.W => self.velocity.z = value,
+                        events.KeybordKeyScancode.S => self.velocity.z = -value,
+                        events.KeybordKeyScancode.A => self.velocity.x = -value,
+                        events.KeybordKeyScancode.D => self.velocity.x = value,
+                        events.KeybordKeyScancode.SPACE => self.velocity.y = -value,
+                        events.KeybordKeyScancode.LCTRL => self.velocity.y = value,
+                        else => {},
+                    }
                 }
             },
             .Mouse => |mouse| {
@@ -182,7 +196,10 @@ pub const Camera = struct {
 
         self.inverse_view = self.transform();
         self.view = self.inverse_view.inverse();
-        self.projection = self.perspective();
+        if (self.top_down)
+            self.projection = self.orthogonal()
+        else
+            self.projection = self.perspective();
         self.inverse_projection = self.projection.inverse();
     }
 
@@ -208,25 +225,49 @@ pub const Camera = struct {
         return m;
     }
 
+    pub fn orthogonal(self: *const Self) math.Mat4 {
+        const width: f32 = @as(f32, WINDOW_WIDTH) / self.zoom;
+        const height: f32 = @as(f32, WINDOW_HEIGHT) / self.zoom;
+        var m = math.Mat4.orthogonal(
+            width,
+            height,
+            Self.ORTHO_DEPTH,
+        );
+        // flip Y for opengl
+        m.j.y *= -1.0;
+        return m;
+    }
+
+    pub fn mouse_to_xy(self: *const Self, mouse_pos: math.Vec3) math.Vec3 {
+        if (self.top_down) {
+            return self.inverse_view
+                .mul(self.inverse_projection)
+                .mul_vec4(mouse_pos.extend(1.0))
+                .shrink();
+        } else {
+            const world_near =
+                self.inverse_view.mul(self.inverse_projection).mul_vec4(mouse_pos.extend(1.0));
+            const world_near_world = world_near.shrink().div_f32(world_near.w);
+            const forward = world_near_world.sub(self.position).normalize();
+            const t = -self.position.z / forward.z;
+            const xy = self.position.add(forward.mul_f32(t));
+            return xy;
+        }
+    }
+
     pub fn imgui_options(self: *Self) void {
         _ = cimgui.igSliderFloat3("position", @ptrCast(&self.position), -100.0, 100.0, null, 0);
         _ = cimgui.igSliderFloat("pitch", @ptrCast(&self.pitch), -100.0, 100.0, null, 0);
         _ = cimgui.igSliderFloat("yaw", @ptrCast(&self.yaw), -100.0, 100.0, null, 0);
-        _ = cimgui.igSliderFloat("fovy", @ptrCast(&self.fovy), -100.0, 100.0, null, 0);
-        _ = cimgui.igSliderFloat("near", @ptrCast(&self.near), -100.0, 100.0, null, 0);
-        _ = cimgui.igSliderFloat("far", @ptrCast(&self.far), -100.0, 100.0, null, 0);
+        if (self.top_down) {
+            _ = cimgui.igSliderFloat("zoom", @ptrCast(&self.zoom), -100.0, 100.0, null, 0);
+        } else {
+            _ = cimgui.igSliderFloat("fovy", @ptrCast(&self.fovy), -100.0, 100.0, null, 0);
+            _ = cimgui.igSliderFloat("near", @ptrCast(&self.near), -100.0, 100.0, null, 0);
+            _ = cimgui.igSliderFloat("far", @ptrCast(&self.far), -100.0, 100.0, null, 0);
+        }
     }
 };
-
-pub fn mouse_to_xy(camera: *const Camera, mouse_pos: math.Vec3) math.Vec3 {
-    const world_near =
-        camera.inverse_view.mul(camera.inverse_projection).mul_vec4(mouse_pos.extend(1.0));
-    const world_near_world = world_near.shrink().div_f32(world_near.w);
-    const forward = world_near_world.sub(camera.position).normalize();
-    const t = -camera.position.z / forward.z;
-    const xy = camera.position.add(forward.mul_f32(t));
-    return xy;
-}
 
 pub const App = struct {
     mesh_shader: Shader,
@@ -301,7 +342,7 @@ pub const App = struct {
             .y = -((@as(f32, @floatFromInt(mouse_pos.y)) / WINDOW_HEIGHT * 2.0) - 1.0),
             .z = 1.0,
         };
-        const mouse_xy = mouse_to_xy(camera, mouse_clip);
+        const mouse_xy = camera.mouse_to_xy(mouse_clip);
         const grid_xy = math.Vec3{
             .x = @floor(mouse_xy.x) + 0.5,
             .y = @floor(mouse_xy.y) + 0.5,

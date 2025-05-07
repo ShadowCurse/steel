@@ -479,6 +479,16 @@ pub const Mat4 = extern struct {
         };
     }
 
+    // Assuming the camera is in the center of the near plane
+    pub fn orthogonal(width: f32, height: f32, depth: f32) Mat4 {
+        return .{
+            .i = .{ .x = 2.0 / width },
+            .j = .{ .y = 2.0 / height },
+            .k = .{ .z = 1.0 / depth },
+            .t = .{ .w = 1.0 },
+        };
+    }
+
     pub fn rotation_x(angle: f32) Mat4 {
         const c = @cos(angle);
         const s = @sin(angle);
