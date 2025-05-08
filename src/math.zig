@@ -122,6 +122,7 @@ pub const Vec3 = extern struct {
     y: f32 = 0.0,
     z: f32 = 0.0,
 
+    pub const ONE: Vec3 = .{ .x = 1.0, .y = 1.0, .z = 1.0 };
     pub const X: Vec3 = .{ .x = 1.0 };
     pub const NEG_X: Vec3 = .{ .x = -1.0 };
     pub const Y: Vec3 = .{ .y = 1.0 };
@@ -465,6 +466,14 @@ pub const Mat4 = extern struct {
     pub inline fn translate(self: Mat4, v: Vec3) Mat4 {
         var tmp = self;
         tmp.t = tmp.t.add(v.extend(0.0));
+        return tmp;
+    }
+
+    pub inline fn scale(self: Mat4, s: Vec3) Mat4 {
+        var tmp = self;
+        tmp.i.x = tmp.i.x * s.x;
+        tmp.j.y = tmp.j.y * s.y;
+        tmp.k.z = tmp.k.z * s.z;
         return tmp;
     }
 
