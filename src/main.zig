@@ -288,7 +288,12 @@ pub const App = struct {
     topdown_camera: Camera,
     use_topdown_camera: bool = false,
 
-    cubes: std.ArrayListUnmanaged(math.Mat4) = .empty,
+    cubes: std.ArrayListUnmanaged(Self.CubeInfo) = .empty,
+
+    const CubeInfo = struct {
+        position: math.Vec2,
+        scale: math.Vec3 = .ONE,
+    };
 
     const Self = @This();
 
@@ -376,9 +381,15 @@ pub const App = struct {
         const model_xy = math.Mat4.IDENDITY.translate(grid_xy);
 
         if (lmb_pressed)
-            try self.add_cube(model_xy);
+            try self.add_cube(.{ .position = .{
+                .x = grid_xy.x,
+                .y = grid_xy.y,
+            } });
         if (rmb_pressed)
-            try self.remove_cube(model_xy);
+            try self.remove_cube(.{
+                .x = grid_xy.x,
+                .y = grid_xy.y,
+            });
 
         {
             var open: bool = true;
@@ -423,6 +434,8 @@ pub const App = struct {
         gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT);
 
         for (self.cubes.items) |cube| {
+            const model = math.Mat4.IDENDITY.translate(cube.position.extend(0.0));
+
             const view_loc = self.mesh_shader.get_uniform_location("view");
             const projection_loc = self.mesh_shader.get_uniform_location("projection");
             const model_loc = self.mesh_shader.get_uniform_location("model");
@@ -430,21 +443,9 @@ pub const App = struct {
             self.mesh_shader.use();
             gl.glUniformMatrix4fv(view_loc, 1, gl.GL_FALSE, @ptrCast(&camera.view));
             gl.glUniformMatrix4fv(projection_loc, 1, gl.GL_FALSE, @ptrCast(&camera.projection));
-            gl.glUniformMatrix4fv(model_loc, 1, gl.GL_FALSE, @ptrCast(&cube));
+            gl.glUniformMatrix4fv(model_loc, 1, gl.GL_FALSE, @ptrCast(&model));
             self.cube.draw();
         }
-        // {
-        //     const view_loc = self.mesh_shader.get_uniform_location("view");
-        //     const projection_loc = self.mesh_shader.get_uniform_location("projection");
-        //     const model_loc = self.mesh_shader.get_uniform_location("model");
-        //
-        //     self.mesh_shader.use();
-        //     gl.glUniformMatrix4fv(view_loc, 1, gl.GL_FALSE, @ptrCast(&camera.view));
-        //     gl.glUniformMatrix4fv(projection_loc, 1, gl.GL_FALSE, @ptrCast(&camera.projection));
-        //     gl.glUniformMatrix4fv(model_loc, 1, gl.GL_FALSE, @ptrCast(&model));
-        //     self.cube.draw();
-        // }
-        //
         {
             const view_loc = self.mesh_shader.get_uniform_location("view");
             const projection_loc = self.mesh_shader.get_uniform_location("projection");
@@ -491,15 +492,15 @@ pub const App = struct {
         cimgui.ImGui_ImplOpenGL3_RenderDrawData(imgui_data);
     }
 
-    pub fn add_cube(self: *Self, cube: math.Mat4) !void {
+    pub fn add_cube(self: *Self, cube: Self.CubeInfo) !void {
         for (self.cubes.items) |c|
-            if (c.eq(cube)) return;
+            if (c.position.eq(cube.position)) return;
         try self.cubes.append(self.allocator, cube);
     }
 
-    pub fn remove_cube(self: *Self, cube: math.Mat4) !void {
+    pub fn remove_cube(self: *Self, position: math.Vec2) !void {
         for (self.cubes.items, 0..) |c, i| {
-            if (c.eq(cube)) _ = self.cubes.swapRemove(i);
+            if (c.position.eq(position)) _ = self.cubes.swapRemove(i);
         }
     }
 };
