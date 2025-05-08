@@ -289,10 +289,16 @@ pub const App = struct {
     use_topdown_camera: bool = false,
 
     cubes: std.ArrayListUnmanaged(Self.CubeInfo) = .empty,
+    current_cube_type: Self.CubeType = .Floor,
 
     const CubeInfo = struct {
         position: math.Vec2,
         scale: math.Vec3 = .ONE,
+    };
+
+    const CubeType = enum {
+        Floor,
+        Wall,
     };
 
     const Self = @This();
@@ -381,10 +387,19 @@ pub const App = struct {
         const model_xy = math.Mat4.IDENDITY.translate(grid_xy);
 
         if (lmb_pressed)
-            try self.add_cube(.{ .position = .{
-                .x = grid_xy.x,
-                .y = grid_xy.y,
-            } });
+            switch (self.current_cube_type) {
+                .Floor => try self.add_cube(.{
+                    .position = .{
+                        .x = grid_xy.x,
+                        .y = grid_xy.y,
+                    },
+                    .scale = .{ .x = 1.0, .y = 1.0, .z = 0.2 },
+                }),
+                .Wall => try self.add_cube(.{ .position = .{
+                    .x = grid_xy.x,
+                    .y = grid_xy.y,
+                } }),
+            };
         if (rmb_pressed)
             try self.remove_cube(.{
                 .x = grid_xy.x,
@@ -426,6 +441,12 @@ pub const App = struct {
 
             _ = cimgui.igSeparatorText("Total cubes");
             _ = cimgui.igValue_Uint("n", @intCast(self.cubes.items.len));
+
+            _ = cimgui.igSeparatorText("Cube Type");
+            if (cimgui.igSelectable_Bool("Floor", self.current_cube_type == .Floor, 0, .{}))
+                self.current_cube_type = .Floor;
+            if (cimgui.igSelectable_Bool("Wall", self.current_cube_type == .Wall, 0, .{}))
+                self.current_cube_type = .Wall;
         }
         cimgui.igRender();
 
@@ -434,7 +455,7 @@ pub const App = struct {
         gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT);
 
         for (self.cubes.items) |cube| {
-            const model = math.Mat4.IDENDITY.translate(cube.position.extend(0.0));
+            const model = math.Mat4.IDENDITY.translate(cube.position.extend(0.0)).scale(cube.scale);
 
             const view_loc = self.mesh_shader.get_uniform_location("view");
             const projection_loc = self.mesh_shader.get_uniform_location("projection");
