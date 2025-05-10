@@ -288,15 +288,15 @@ pub const App = struct {
     topdown_camera: Camera,
     use_topdown_camera: bool = false,
 
-    cubes: std.ArrayListUnmanaged(Self.CubeInfo) = .empty,
-    current_cube_type: Self.CubeType = .Floor,
+    level_tiles: std.ArrayListUnmanaged(Self.TileInfo) = .empty,
+    current_tile_type: Self.TileType = .Floor,
 
-    const CubeInfo = struct {
+    const TileInfo = struct {
         position: math.Vec2,
-        scale: math.Vec3 = .ONE,
+        type: TileType,
     };
 
-    const CubeType = enum {
+    const TileType = enum {
         Floor,
         Wall,
     };
@@ -387,19 +387,13 @@ pub const App = struct {
         const model_xy = math.Mat4.IDENDITY.translate(grid_xy);
 
         if (lmb_pressed)
-            switch (self.current_cube_type) {
-                .Floor => try self.add_cube(.{
-                    .position = .{
-                        .x = grid_xy.x,
-                        .y = grid_xy.y,
-                    },
-                    .scale = .{ .x = 1.0, .y = 1.0, .z = 0.2 },
-                }),
-                .Wall => try self.add_cube(.{ .position = .{
+            try self.add_cube(.{
+                .position = .{
                     .x = grid_xy.x,
                     .y = grid_xy.y,
-                } }),
-            };
+                },
+                .type = self.current_tile_type,
+            });
         if (rmb_pressed)
             try self.remove_cube(.{
                 .x = grid_xy.x,
@@ -440,13 +434,13 @@ pub const App = struct {
             _ = cimgui.igDragFloat("scale", &self.grid_scale, 0.1, 1.0, 100.0, null, 0);
 
             _ = cimgui.igSeparatorText("Total cubes");
-            _ = cimgui.igValue_Uint("n", @intCast(self.cubes.items.len));
+            _ = cimgui.igValue_Uint("n", @intCast(self.level_tiles.items.len));
 
-            _ = cimgui.igSeparatorText("Cube Type");
-            if (cimgui.igSelectable_Bool("Floor", self.current_cube_type == .Floor, 0, .{}))
-                self.current_cube_type = .Floor;
-            if (cimgui.igSelectable_Bool("Wall", self.current_cube_type == .Wall, 0, .{}))
-                self.current_cube_type = .Wall;
+            _ = cimgui.igSeparatorText("Tile type");
+            if (cimgui.igSelectable_Bool("Floor", self.current_tile_type == .Floor, 0, .{}))
+                self.current_tile_type = .Floor;
+            if (cimgui.igSelectable_Bool("Wall", self.current_tile_type == .Wall, 0, .{}))
+                self.current_tile_type = .Wall;
         }
         cimgui.igRender();
 
@@ -454,8 +448,12 @@ pub const App = struct {
         gl.glClearColor(0.0, 0.0, 0.0, 1.0);
         gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT);
 
-        for (self.cubes.items) |cube| {
-            const model = math.Mat4.IDENDITY.translate(cube.position.extend(0.0)).scale(cube.scale);
+        for (self.level_tiles.items) |cube| {
+            const scale: math.Vec3 = switch (cube.type) {
+                .Floor => .{ .x = 1.0, .y = 1.0, .z = 0.2 },
+                .Wall => .{ .x = 1.0, .y = 1.0, .z = 1.0 },
+            };
+            const model = math.Mat4.IDENDITY.translate(cube.position.extend(0.0)).scale(scale);
 
             const view_loc = self.mesh_shader.get_uniform_location("view");
             const projection_loc = self.mesh_shader.get_uniform_location("projection");
@@ -513,15 +511,15 @@ pub const App = struct {
         cimgui.ImGui_ImplOpenGL3_RenderDrawData(imgui_data);
     }
 
-    pub fn add_cube(self: *Self, cube: Self.CubeInfo) !void {
-        for (self.cubes.items) |c|
+    pub fn add_cube(self: *Self, cube: Self.TileInfo) !void {
+        for (self.level_tiles.items) |c|
             if (c.position.eq(cube.position)) return;
-        try self.cubes.append(self.allocator, cube);
+        try self.level_tiles.append(self.allocator, cube);
     }
 
     pub fn remove_cube(self: *Self, position: math.Vec2) !void {
-        for (self.cubes.items, 0..) |c, i| {
-            if (c.position.eq(position)) _ = self.cubes.swapRemove(i);
+        for (self.level_tiles.items, 0..) |c, i| {
+            if (c.position.eq(position)) _ = self.level_tiles.swapRemove(i);
         }
     }
 };
