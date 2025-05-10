@@ -10,7 +10,8 @@ const mesh = @import("mesh.zig");
 const events = @import("events.zig");
 
 const rendering = @import("rendering.zig");
-const Shader = rendering.Shader;
+const MeshShader = rendering.MeshShader;
+const GridShader = rendering.GridShader;
 const Mesh = rendering.Mesh;
 const Grid = rendering.Grid;
 
@@ -284,9 +285,9 @@ pub const Camera = struct {
 pub const App = struct {
     allocator: Allocator,
 
-    mesh_shader: Shader,
+    mesh_shader: MeshShader,
     cube: Mesh,
-    grid_shader: Shader,
+    grid_shader: GridShader,
     grid: Grid,
     grid_scale: f32 = 10.0,
 
@@ -327,15 +328,8 @@ pub const App = struct {
     const Self = @This();
 
     pub fn init(allocator: Allocator) Self {
-        const mesh_shader = if (builtin.target.os.tag == .emscripten)
-            Shader.init("resources/shaders/mesh_web.vert", "resources/shaders/mesh_web.frag")
-        else
-            Shader.init("resources/shaders/mesh.vert", "resources/shaders/mesh.frag");
-
-        const grid_shader = if (builtin.target.os.tag == .emscripten)
-            Shader.init("resources/shaders/grid_web.vert", "resources/shaders/grid_web.frag")
-        else
-            Shader.init("resources/shaders/grid.vert", "resources/shaders/grid.frag");
+        const mesh_shader = MeshShader.init();
+        const grid_shader = GridShader.init();
 
         const cube = Mesh.init(mesh.MeshVertex, &mesh.Cube.VERTICES, &mesh.Cube.INDICES);
         const grid = Grid.init();
@@ -476,71 +470,39 @@ pub const App = struct {
                 .translate(cube.position.extend(0.0))
                 .scale(tile_info.scale);
 
-            const view_loc = self.mesh_shader.get_uniform_location("view");
-            const projection_loc = self.mesh_shader.get_uniform_location("projection");
-            const model_loc = self.mesh_shader.get_uniform_location("model");
-            const color_loc = self.mesh_shader.get_uniform_location("color");
-            const camera_pos_loc = self.mesh_shader.get_uniform_location("camera_position");
-            const light_pos_loc = self.mesh_shader.get_uniform_location("light_position");
-
-            self.mesh_shader.use();
-            gl.glUniformMatrix4fv(view_loc, 1, gl.GL_FALSE, @ptrCast(&camera.view));
-            gl.glUniformMatrix4fv(projection_loc, 1, gl.GL_FALSE, @ptrCast(&camera.projection));
-            gl.glUniformMatrix4fv(model_loc, 1, gl.GL_FALSE, @ptrCast(&model));
-            gl.glUniform3f(color_loc, tile_info.color.x, tile_info.color.y, tile_info.color.z);
-            gl.glUniform3f(color_loc, tile_info.color.x, tile_info.color.y, tile_info.color.z);
-            gl.glUniform3f(camera_pos_loc, camera.position.x, camera.position.y, camera.position.z);
-            gl.glUniform3f(light_pos_loc, 2.0, 0.0, 4.0);
+            self.mesh_shader.setup(
+                &camera.position,
+                &camera.view,
+                &camera.projection,
+                &model,
+                &tile_info.color,
+                &.{ .x = 2.0, .y = 0.0, .z = 4.0 },
+            );
             self.cube.draw();
         }
         {
             const tile_info = Self.TileTypeInfo.get(self.current_tile_type);
             const model = math.Mat4.IDENDITY.translate(grid_xy).scale(tile_info.scale);
 
-            const view_loc = self.mesh_shader.get_uniform_location("view");
-            const projection_loc = self.mesh_shader.get_uniform_location("projection");
-            const model_loc = self.mesh_shader.get_uniform_location("model");
-            const color_loc = self.mesh_shader.get_uniform_location("color");
-            const camera_pos_loc = self.mesh_shader.get_uniform_location("camera_position");
-            const light_pos_loc = self.mesh_shader.get_uniform_location("light_position");
-
-            self.mesh_shader.use();
-            gl.glUniformMatrix4fv(view_loc, 1, gl.GL_FALSE, @ptrCast(&camera.view));
-            gl.glUniformMatrix4fv(projection_loc, 1, gl.GL_FALSE, @ptrCast(&camera.projection));
-            gl.glUniformMatrix4fv(model_loc, 1, gl.GL_FALSE, @ptrCast(&model));
-            gl.glUniform3f(color_loc, tile_info.color.x, tile_info.color.y, tile_info.color.z);
-            gl.glUniform3f(camera_pos_loc, camera.position.x, camera.position.y, camera.position.z);
-            gl.glUniform3f(light_pos_loc, 2.0, 0.0, 4.0);
+            self.mesh_shader.setup(
+                &camera.position,
+                &camera.view,
+                &camera.projection,
+                &model,
+                &tile_info.color,
+                &.{ .x = 2.0, .y = 0.0, .z = 4.0 },
+            );
             self.cube.draw();
         }
 
         {
-            const view_loc = self.grid_shader.get_uniform_location("view");
-            const projection_loc = self.grid_shader.get_uniform_location("projection");
-            const scale_loc = self.grid_shader.get_uniform_location("scale");
-
-            self.grid_shader.use();
-            gl.glUniformMatrix4fv(view_loc, 1, gl.GL_FALSE, @ptrCast(&camera.view));
-            gl.glUniformMatrix4fv(projection_loc, 1, gl.GL_FALSE, @ptrCast(&camera.projection));
-            gl.glUniform1f(scale_loc, self.grid_scale);
-
-            if (builtin.target.os.tag == .emscripten) {
-                const inverse_view_loc = self.grid_shader.get_uniform_location("inverse_view");
-                const inverse_projection_loc = self.grid_shader.get_uniform_location("inverse_projection");
-                gl.glUniformMatrix4fv(
-                    inverse_view_loc,
-                    1,
-                    gl.GL_FALSE,
-                    @ptrCast(&camera.inverse_view),
-                );
-                gl.glUniformMatrix4fv(
-                    inverse_projection_loc,
-                    1,
-                    gl.GL_FALSE,
-                    @ptrCast(&camera.inverse_projection),
-                );
-            }
-
+            self.grid_shader.setup(
+                &camera.view,
+                &camera.projection,
+                &camera.inverse_view,
+                &camera.inverse_projection,
+                self.grid_scale,
+            );
             self.grid.draw();
         }
 

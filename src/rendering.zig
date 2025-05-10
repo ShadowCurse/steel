@@ -107,6 +107,61 @@ pub const Shader = struct {
     }
 };
 
+pub const MeshShader = struct {
+    shader: Shader,
+
+    view_loc: i32,
+    projection_loc: i32,
+    model_loc: i32,
+    color_loc: i32,
+    camera_pos_loc: i32,
+    light_pos_loc: i32,
+
+    const Self = @This();
+
+    pub fn init() Self {
+        const shader = if (builtin.target.os.tag == .emscripten)
+            Shader.init("resources/shaders/mesh_web.vert", "resources/shaders/mesh_web.frag")
+        else
+            Shader.init("resources/shaders/mesh.vert", "resources/shaders/mesh.frag");
+
+        const view_loc = shader.get_uniform_location("view");
+        const projection_loc = shader.get_uniform_location("projection");
+        const model_loc = shader.get_uniform_location("model");
+        const color_loc = shader.get_uniform_location("color");
+        const camera_pos_loc = shader.get_uniform_location("camera_position");
+        const light_pos_loc = shader.get_uniform_location("light_position");
+
+        return .{
+            .shader = shader,
+            .view_loc = view_loc,
+            .projection_loc = projection_loc,
+            .model_loc = model_loc,
+            .color_loc = color_loc,
+            .camera_pos_loc = camera_pos_loc,
+            .light_pos_loc = light_pos_loc,
+        };
+    }
+
+    pub fn setup(
+        self: *const Self,
+        camera_position: *const math.Vec3,
+        camera_view: *const math.Mat4,
+        camera_projection: *const math.Mat4,
+        model: *const math.Mat4,
+        color: *const math.Vec3,
+        light_position: *const math.Vec3,
+    ) void {
+        self.shader.use();
+        gl.glUniformMatrix4fv(self.view_loc, 1, gl.GL_FALSE, @ptrCast(camera_view));
+        gl.glUniformMatrix4fv(self.projection_loc, 1, gl.GL_FALSE, @ptrCast(camera_projection));
+        gl.glUniformMatrix4fv(self.model_loc, 1, gl.GL_FALSE, @ptrCast(model));
+        gl.glUniform3f(self.color_loc, color.x, color.y, color.z);
+        gl.glUniform3f(self.camera_pos_loc, camera_position.x, camera_position.y, camera_position.z);
+        gl.glUniform3f(self.light_pos_loc, light_position.x, light_position.y, light_position.z);
+    }
+};
+
 pub const Mesh = struct {
     vertex_buffer: u32,
     index_buffer: u32,
@@ -208,5 +263,74 @@ pub const Grid = struct {
             gl.glBindVertexArray(self.vertex_array);
         }
         gl.glDrawArrays(gl.GL_TRIANGLES, 0, 6);
+    }
+};
+
+pub const GridShader = struct {
+    shader: Shader,
+
+    view_loc: i32,
+    projection_loc: i32,
+    scale_loc: i32,
+    inverse_view_loc: if (builtin.target.os.tag == .emscripten) i32 else void,
+    inverse_projection_loc: if (builtin.target.os.tag == .emscripten) i32 else void,
+
+    const Self = @This();
+
+    pub fn init() Self {
+        const shader = if (builtin.target.os.tag == .emscripten)
+            Shader.init("resources/shaders/grid_web.vert", "resources/shaders/grid_web.frag")
+        else
+            Shader.init("resources/shaders/grid.vert", "resources/shaders/grid.frag");
+
+        const view_loc = shader.get_uniform_location("view");
+        const projection_loc = shader.get_uniform_location("projection");
+        const scale_loc = shader.get_uniform_location("scale");
+
+        const inverse_view_loc = if (builtin.target.os.tag == .emscripten)
+            shader.get_uniform_location("inverse_view")
+        else {};
+
+        const inverse_projection_loc = if (builtin.target.os.tag == .emscripten)
+            shader.get_uniform_location("inverse_projection")
+        else {};
+
+        return .{
+            .shader = shader,
+            .view_loc = view_loc,
+            .projection_loc = projection_loc,
+            .scale_loc = scale_loc,
+            .inverse_view_loc = inverse_view_loc,
+            .inverse_projection_loc = inverse_projection_loc,
+        };
+    }
+
+    pub fn setup(
+        self: *const Self,
+        camera_view: *const math.Mat4,
+        camera_projection: *const math.Mat4,
+        camera_inverse_view: *const math.Mat4,
+        camera_inverse_projection: *const math.Mat4,
+        scale: f32,
+    ) void {
+        self.shader.use();
+        gl.glUniformMatrix4fv(self.view_loc, 1, gl.GL_FALSE, @ptrCast(camera_view));
+        gl.glUniformMatrix4fv(self.projection_loc, 1, gl.GL_FALSE, @ptrCast(camera_projection));
+        gl.glUniform1f(self.scale_loc, scale);
+
+        if (builtin.target.os.tag == .emscripten) {
+            gl.glUniformMatrix4fv(
+                self.inverse_view_loc,
+                1,
+                gl.GL_FALSE,
+                @ptrCast(camera_inverse_view),
+            );
+            gl.glUniformMatrix4fv(
+                self.inverse_projection_loc,
+                1,
+                gl.GL_FALSE,
+                @ptrCast(camera_inverse_projection),
+            );
+        }
     }
 };
