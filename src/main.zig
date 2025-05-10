@@ -480,12 +480,17 @@ pub const App = struct {
             const projection_loc = self.mesh_shader.get_uniform_location("projection");
             const model_loc = self.mesh_shader.get_uniform_location("model");
             const color_loc = self.mesh_shader.get_uniform_location("color");
+            const camera_pos_loc = self.mesh_shader.get_uniform_location("camera_position");
+            const light_pos_loc = self.mesh_shader.get_uniform_location("light_position");
 
             self.mesh_shader.use();
             gl.glUniformMatrix4fv(view_loc, 1, gl.GL_FALSE, @ptrCast(&camera.view));
             gl.glUniformMatrix4fv(projection_loc, 1, gl.GL_FALSE, @ptrCast(&camera.projection));
             gl.glUniformMatrix4fv(model_loc, 1, gl.GL_FALSE, @ptrCast(&model));
             gl.glUniform3f(color_loc, tile_info.color.x, tile_info.color.y, tile_info.color.z);
+            gl.glUniform3f(color_loc, tile_info.color.x, tile_info.color.y, tile_info.color.z);
+            gl.glUniform3f(camera_pos_loc, camera.position.x, camera.position.y, camera.position.z);
+            gl.glUniform3f(light_pos_loc, 2.0, 0.0, 4.0);
             self.cube.draw();
         }
         {
@@ -496,12 +501,16 @@ pub const App = struct {
             const projection_loc = self.mesh_shader.get_uniform_location("projection");
             const model_loc = self.mesh_shader.get_uniform_location("model");
             const color_loc = self.mesh_shader.get_uniform_location("color");
+            const camera_pos_loc = self.mesh_shader.get_uniform_location("camera_position");
+            const light_pos_loc = self.mesh_shader.get_uniform_location("light_position");
 
             self.mesh_shader.use();
             gl.glUniformMatrix4fv(view_loc, 1, gl.GL_FALSE, @ptrCast(&camera.view));
             gl.glUniformMatrix4fv(projection_loc, 1, gl.GL_FALSE, @ptrCast(&camera.projection));
             gl.glUniformMatrix4fv(model_loc, 1, gl.GL_FALSE, @ptrCast(&model));
             gl.glUniform3f(color_loc, tile_info.color.x, tile_info.color.y, tile_info.color.z);
+            gl.glUniform3f(camera_pos_loc, camera.position.x, camera.position.y, camera.position.z);
+            gl.glUniform3f(light_pos_loc, 2.0, 0.0, 4.0);
             self.cube.draw();
         }
 
