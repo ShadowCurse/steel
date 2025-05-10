@@ -25,6 +25,12 @@ pub const log_options = log.Options{
     .colors = builtin.target.os.tag != .emscripten,
 };
 
+pub const os = if (builtin.os.tag != .emscripten) std.os else struct {
+    pub const heap = struct {
+        pub const page_allocator = std.heap.c_allocator;
+    };
+};
+
 pub fn main() !void {
     sdl.assert(@src(), sdl.SDL_Init(sdl.SDL_INIT_AUDIO | sdl.SDL_INIT_VIDEO));
 
