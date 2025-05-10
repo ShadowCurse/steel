@@ -384,7 +384,6 @@ pub const App = struct {
             .y = @floor(mouse_xy.y) + 0.5,
             .z = 0.0,
         };
-        const model_xy = math.Mat4.IDENDITY.translate(grid_xy);
 
         if (lmb_pressed)
             try self.add_cube(.{
@@ -466,6 +465,12 @@ pub const App = struct {
             self.cube.draw();
         }
         {
+            const scale: math.Vec3 = switch (self.current_tile_type) {
+                .Floor => .{ .x = 1.0, .y = 1.0, .z = 0.2 },
+                .Wall => .{ .x = 1.0, .y = 1.0, .z = 1.0 },
+            };
+            const model = math.Mat4.IDENDITY.translate(grid_xy).scale(scale);
+
             const view_loc = self.mesh_shader.get_uniform_location("view");
             const projection_loc = self.mesh_shader.get_uniform_location("projection");
             const model_loc = self.mesh_shader.get_uniform_location("model");
@@ -473,7 +478,7 @@ pub const App = struct {
             self.mesh_shader.use();
             gl.glUniformMatrix4fv(view_loc, 1, gl.GL_FALSE, @ptrCast(&camera.view));
             gl.glUniformMatrix4fv(projection_loc, 1, gl.GL_FALSE, @ptrCast(&camera.projection));
-            gl.glUniformMatrix4fv(model_loc, 1, gl.GL_FALSE, @ptrCast(&model_xy));
+            gl.glUniformMatrix4fv(model_loc, 1, gl.GL_FALSE, @ptrCast(&model));
             self.cube.draw();
         }
 
