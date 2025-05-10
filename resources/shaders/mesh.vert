@@ -6,13 +6,10 @@ layout (location = 2) in vec3 in_normal;
 layout (location = 3) in float in_uv_y;
 layout (location = 4) in vec4 in_color;
 
-layout (location = 5) out vec4 out_color;
-
 uniform mat4 projection;
 uniform mat4 view;
 uniform mat4 model;
 
 void main() {
     gl_Position = projection * view * model * vec4(in_position, 1.0);
-    out_color = in_color;
 }

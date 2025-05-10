@@ -288,10 +288,10 @@ pub const App = struct {
     topdown_camera: Camera,
     use_topdown_camera: bool = false,
 
-    level_tiles: std.ArrayListUnmanaged(Self.TileInfo) = .empty,
+    level_tiles: std.ArrayListUnmanaged(Self.Tile) = .empty,
     current_tile_type: Self.TileType = .Floor,
 
-    const TileInfo = struct {
+    const Tile = struct {
         position: math.Vec2,
         type: TileType,
     };
@@ -300,6 +300,23 @@ pub const App = struct {
         Floor,
         Wall,
     };
+
+    const TileInfo = struct {
+        scale: math.Vec3,
+        color: math.Vec3,
+    };
+    const TileTypeInfo = std.EnumArray(TileType, TileInfo).init(
+        .{
+            .Floor = .{
+                .scale = .{ .x = 1.0, .y = 1.0, .z = 0.2 },
+                .color = .ONE,
+            },
+            .Wall = .{
+                .scale = .{ .x = 1.0, .y = 1.0, .z = 1.0 },
+                .color = .{ .x = 0.5, .y = 0.5, .z = 0.5 },
+            },
+        },
+    );
 
     const Self = @This();
 
@@ -448,37 +465,37 @@ pub const App = struct {
         gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT);
 
         for (self.level_tiles.items) |cube| {
-            const scale: math.Vec3 = switch (cube.type) {
-                .Floor => .{ .x = 1.0, .y = 1.0, .z = 0.2 },
-                .Wall => .{ .x = 1.0, .y = 1.0, .z = 1.0 },
-            };
-            const model = math.Mat4.IDENDITY.translate(cube.position.extend(0.0)).scale(scale);
+            const tile_info = Self.TileTypeInfo.get(cube.type);
+            const model = math.Mat4.IDENDITY
+                .translate(cube.position.extend(0.0))
+                .scale(tile_info.scale);
 
             const view_loc = self.mesh_shader.get_uniform_location("view");
             const projection_loc = self.mesh_shader.get_uniform_location("projection");
             const model_loc = self.mesh_shader.get_uniform_location("model");
+            const color_loc = self.mesh_shader.get_uniform_location("color");
 
             self.mesh_shader.use();
             gl.glUniformMatrix4fv(view_loc, 1, gl.GL_FALSE, @ptrCast(&camera.view));
             gl.glUniformMatrix4fv(projection_loc, 1, gl.GL_FALSE, @ptrCast(&camera.projection));
             gl.glUniformMatrix4fv(model_loc, 1, gl.GL_FALSE, @ptrCast(&model));
+            gl.glUniform3f(color_loc, tile_info.color.x, tile_info.color.y, tile_info.color.z);
             self.cube.draw();
         }
         {
-            const scale: math.Vec3 = switch (self.current_tile_type) {
-                .Floor => .{ .x = 1.0, .y = 1.0, .z = 0.2 },
-                .Wall => .{ .x = 1.0, .y = 1.0, .z = 1.0 },
-            };
-            const model = math.Mat4.IDENDITY.translate(grid_xy).scale(scale);
+            const tile_info = Self.TileTypeInfo.get(self.current_tile_type);
+            const model = math.Mat4.IDENDITY.translate(grid_xy).scale(tile_info.scale);
 
             const view_loc = self.mesh_shader.get_uniform_location("view");
             const projection_loc = self.mesh_shader.get_uniform_location("projection");
             const model_loc = self.mesh_shader.get_uniform_location("model");
+            const color_loc = self.mesh_shader.get_uniform_location("color");
 
             self.mesh_shader.use();
             gl.glUniformMatrix4fv(view_loc, 1, gl.GL_FALSE, @ptrCast(&camera.view));
             gl.glUniformMatrix4fv(projection_loc, 1, gl.GL_FALSE, @ptrCast(&camera.projection));
             gl.glUniformMatrix4fv(model_loc, 1, gl.GL_FALSE, @ptrCast(&model));
+            gl.glUniform3f(color_loc, tile_info.color.x, tile_info.color.y, tile_info.color.z);
             self.cube.draw();
         }
 
@@ -516,7 +533,7 @@ pub const App = struct {
         cimgui.ImGui_ImplOpenGL3_RenderDrawData(imgui_data);
     }
 
-    pub fn add_cube(self: *Self, cube: Self.TileInfo) !void {
+    pub fn add_cube(self: *Self, cube: Self.Tile) !void {
         for (self.level_tiles.items) |c|
             if (c.position.eq(cube.position)) return;
         try self.level_tiles.append(self.allocator, cube);
