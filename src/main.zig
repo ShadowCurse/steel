@@ -306,6 +306,8 @@ pub const Grid = struct {
         None,
         Floor,
         Wall,
+        Spawn,
+        Throne,
     };
 
     const CellInfo = struct {
@@ -322,6 +324,14 @@ pub const Grid = struct {
             .Wall = .{
                 .scale = .{ .x = 1.0, .y = 1.0, .z = 1.0 },
                 .color = .{ .x = 0.5, .y = 0.5, .z = 0.5 },
+            },
+            .Spawn = .{
+                .scale = .{ .x = 1.0, .y = 1.0, .z = 0.5 },
+                .color = .{ .x = 1.0, .y = 0.0, .z = 0.0 },
+            },
+            .Throne = .{
+                .scale = .{ .x = 1.0, .y = 1.0, .z = 1.5 },
+                .color = .{ .x = 0.9, .y = 0.8, .z = 0.01 },
             },
         },
     );
@@ -492,6 +502,10 @@ pub const App = struct {
                 self.current_cell_type = .Floor;
             if (cimgui.igSelectable_Bool("Wall", self.current_cell_type == .Wall, 0, .{}))
                 self.current_cell_type = .Wall;
+            if (cimgui.igSelectable_Bool("Spawn", self.current_cell_type == .Spawn, 0, .{}))
+                self.current_cell_type = .Spawn;
+            if (cimgui.igSelectable_Bool("Throne", self.current_cell_type == .Throne, 0, .{}))
+                self.current_cell_type = .Throne;
         }
         cimgui.igRender();
 
