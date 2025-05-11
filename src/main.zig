@@ -11,9 +11,9 @@ const events = @import("events.zig");
 
 const rendering = @import("rendering.zig");
 const MeshShader = rendering.MeshShader;
-const GridShader = rendering.GridShader;
+const DebugGridShader = rendering.DebugGridShader;
 const Mesh = rendering.Mesh;
-const Grid = rendering.Grid;
+const DebugGrid = rendering.DebugGrid;
 
 const Allocator = std.mem.Allocator;
 const DebugAllocator = std.heap.DebugAllocator(.{});
@@ -282,38 +282,29 @@ pub const Camera = struct {
     }
 };
 
-pub const App = struct {
-    allocator: Allocator,
+pub const Grid = struct {
+    cells: [Self.WIDTH][Self.HEIGHT]Cell = .{.{Cell{}} ** Self.HEIGHT} ** Self.WIDTH,
 
-    mesh_shader: MeshShader,
-    cube: Mesh,
-    grid_shader: GridShader,
-    grid: Grid,
-    grid_scale: f32 = 10.0,
+    const WIDTH = 32;
+    const HEIGHT = 32;
 
-    floating_camera: Camera,
-    topdown_camera: Camera,
-    use_topdown_camera: bool = false,
-
-    level_tiles: std.ArrayListUnmanaged(Self.Tile) = .empty,
-    current_tile_type: Self.TileType = .Floor,
-
-    const Tile = struct {
-        position: math.Vec2,
-        type: TileType,
+    const Cell = struct {
+        type: CellType = .None,
     };
 
-    const TileType = enum {
+    const CellType = enum {
+        None,
         Floor,
         Wall,
     };
 
-    const TileInfo = struct {
-        scale: math.Vec3,
-        color: math.Vec3,
+    const CellInfo = struct {
+        scale: math.Vec3 = .{},
+        color: math.Vec3 = .{},
     };
-    const TileTypeInfo = std.EnumArray(TileType, TileInfo).init(
+    const CellTypeInfo = std.EnumArray(CellType, CellInfo).init(
         .{
+            .None = .{},
             .Floor = .{
                 .scale = .{ .x = 1.0, .y = 1.0, .z = 0.2 },
                 .color = .ONE,
@@ -327,12 +318,45 @@ pub const App = struct {
 
     const Self = @This();
 
+    pub fn set(self: *Self, x: i32, y: i32, @"type": CellType) void {
+        if (x < 0 or Self.WIDTH < x or y < 0 or Self.HEIGHT < y)
+            return;
+
+        self.cells[@intCast(x)][@intCast(y)].type = @"type";
+    }
+
+    pub fn unset(self: *Self, x: i32, y: i32) void {
+        if (x < 0 or Self.WIDTH < x or y < 0 or Self.HEIGHT < y)
+            return;
+
+        self.cells[@intCast(x)][@intCast(y)].type = .None;
+    }
+};
+
+pub const App = struct {
+    allocator: Allocator,
+
+    mesh_shader: MeshShader,
+    cube: Mesh,
+    debug_grid_shader: DebugGridShader,
+    debug_grid: DebugGrid,
+    debug_grid_scale: f32 = 10.0,
+
+    floating_camera: Camera,
+    topdown_camera: Camera,
+    use_topdown_camera: bool = false,
+
+    grid: Grid,
+    current_cell_type: Grid.CellType = .Floor,
+
+    const Self = @This();
+
     pub fn init(allocator: Allocator) Self {
         const mesh_shader = MeshShader.init();
-        const grid_shader = GridShader.init();
+        const debug_grid_shader = DebugGridShader.init();
 
         const cube = Mesh.init(mesh.MeshVertex, &mesh.Cube.VERTICES, &mesh.Cube.INDICES);
-        const grid = Grid.init();
+        const debug_grid = DebugGrid.init();
 
         const floating_camera: Camera = .{ .position = .{ .y = -10.0 } };
         const topdown_camera: Camera = .{
@@ -341,14 +365,17 @@ pub const App = struct {
             .top_down = true,
         };
 
+        const grid: Grid = .{};
+
         return .{
             .allocator = allocator,
             .mesh_shader = mesh_shader,
             .cube = cube,
-            .grid_shader = grid_shader,
-            .grid = grid,
+            .debug_grid_shader = debug_grid_shader,
+            .debug_grid = debug_grid,
             .floating_camera = floating_camera,
             .topdown_camera = topdown_camera,
+            .grid = grid,
         };
     }
 
@@ -403,18 +430,16 @@ pub const App = struct {
         };
 
         if (lmb_pressed)
-            try self.add_cube(.{
-                .position = .{
-                    .x = grid_xy.x,
-                    .y = grid_xy.y,
-                },
-                .type = self.current_tile_type,
-            });
+            self.grid.set(
+                @intFromFloat(@floor(mouse_xy.x)),
+                @intFromFloat(@floor(mouse_xy.y)),
+                self.current_cell_type,
+            );
         if (rmb_pressed)
-            try self.remove_cube(.{
-                .x = grid_xy.x,
-                .y = grid_xy.y,
-            });
+            self.grid.unset(
+                @intFromFloat(@floor(mouse_xy.x)),
+                @intFromFloat(@floor(mouse_xy.y)),
+            );
 
         {
             var open: bool = true;
@@ -446,17 +471,14 @@ pub const App = struct {
                 self.topdown_camera.imgui_options();
             }
 
-            _ = cimgui.igSeparatorText("Grid scale");
-            _ = cimgui.igDragFloat("scale", &self.grid_scale, 0.1, 1.0, 100.0, null, 0);
+            _ = cimgui.igSeparatorText("Debug grid scale");
+            _ = cimgui.igDragFloat("scale", &self.debug_grid_scale, 0.1, 1.0, 100.0, null, 0);
 
-            _ = cimgui.igSeparatorText("Total cubes");
-            _ = cimgui.igValue_Uint("n", @intCast(self.level_tiles.items.len));
-
-            _ = cimgui.igSeparatorText("Tile type");
-            if (cimgui.igSelectable_Bool("Floor", self.current_tile_type == .Floor, 0, .{}))
-                self.current_tile_type = .Floor;
-            if (cimgui.igSelectable_Bool("Wall", self.current_tile_type == .Wall, 0, .{}))
-                self.current_tile_type = .Wall;
+            _ = cimgui.igSeparatorText("Cell type");
+            if (cimgui.igSelectable_Bool("Floor", self.current_cell_type == .Floor, 0, .{}))
+                self.current_cell_type = .Floor;
+            if (cimgui.igSelectable_Bool("Wall", self.current_cell_type == .Wall, 0, .{}))
+                self.current_cell_type = .Wall;
         }
         cimgui.igRender();
 
@@ -464,46 +486,55 @@ pub const App = struct {
         gl.glClearColor(0.0, 0.0, 0.0, 1.0);
         gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT);
 
-        for (self.level_tiles.items) |cube| {
-            const tile_info = Self.TileTypeInfo.get(cube.type);
-            const model = math.Mat4.IDENDITY
-                .translate(cube.position.extend(0.0))
-                .scale(tile_info.scale);
+        for (0..Grid.WIDTH) |x| {
+            for (0..Grid.HEIGHT) |y| {
+                const cell = &self.grid.cells[x][y];
+                if (cell.type == .None)
+                    continue;
+                const tile_info = Grid.CellTypeInfo.get(cell.type);
+                const model = math.Mat4.IDENDITY
+                    .translate(.{
+                        .x = @as(f32, @floatFromInt(x)) + 0.5,
+                        .y = @as(f32, @floatFromInt(y)) + 0.5,
+                        .z = 0.0,
+                    })
+                    .scale(tile_info.scale);
+
+                self.mesh_shader.setup(
+                    &camera.position,
+                    &camera.view,
+                    &camera.projection,
+                    &model,
+                    &tile_info.color,
+                    &.{ .x = 2.0, .y = 0.0, .z = 4.0 },
+                );
+                self.cube.draw();
+            }
+        }
+        {
+            const cell_info = Grid.CellTypeInfo.get(self.current_cell_type);
+            const model = math.Mat4.IDENDITY.translate(grid_xy).scale(cell_info.scale);
 
             self.mesh_shader.setup(
                 &camera.position,
                 &camera.view,
                 &camera.projection,
                 &model,
-                &tile_info.color,
-                &.{ .x = 2.0, .y = 0.0, .z = 4.0 },
-            );
-            self.cube.draw();
-        }
-        {
-            const tile_info = Self.TileTypeInfo.get(self.current_tile_type);
-            const model = math.Mat4.IDENDITY.translate(grid_xy).scale(tile_info.scale);
-
-            self.mesh_shader.setup(
-                &camera.position,
-                &camera.view,
-                &camera.projection,
-                &model,
-                &tile_info.color,
+                &cell_info.color,
                 &.{ .x = 2.0, .y = 0.0, .z = 4.0 },
             );
             self.cube.draw();
         }
 
         {
-            self.grid_shader.setup(
+            self.debug_grid_shader.setup(
                 &camera.view,
                 &camera.projection,
                 &camera.inverse_view,
                 &camera.inverse_projection,
-                self.grid_scale,
+                self.debug_grid_scale,
             );
-            self.grid.draw();
+            self.debug_grid.draw();
         }
 
         const imgui_data = cimgui.igGetDrawData();

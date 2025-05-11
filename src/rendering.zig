@@ -213,7 +213,7 @@ pub const Mesh = struct {
     }
 };
 
-pub const Grid = struct {
+pub const DebugGrid = struct {
     buffer: if (builtin.target.os.tag == .emscripten) u32 else void,
     vertex_array: if (builtin.target.os.tag == .emscripten) u32 else void,
 
@@ -266,7 +266,7 @@ pub const Grid = struct {
     }
 };
 
-pub const GridShader = struct {
+pub const DebugGridShader = struct {
     shader: Shader,
 
     view_loc: i32,
