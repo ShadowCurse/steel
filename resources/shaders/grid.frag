@@ -7,6 +7,7 @@ layout (location = 0) out vec4 out_color;
 
 uniform mat4 projection;
 uniform mat4 view;
+uniform vec4 limits;
 uniform float scale;
 
 #define AXIS_LINE_WIDTH 1.0
@@ -16,6 +17,14 @@ uniform float scale;
 // scale - distance between lines, high == more distance
 vec4 grid_point_color(vec3 world_pos, float scale) {
   vec2 coord = world_pos.xy / scale;
+
+  float limit_x = limits.x;
+  float limit_neg_x = limits.y;
+  float limit_y = limits.z;
+  float limit_neg_y = limits.w;
+  if (coord.x < limit_neg_x || limit_x < coord.x || coord.y < limit_neg_y || limit_y < coord.y)
+    return vec4(0.0);
+
   // calculate the sum of derivatives for x and y for both coords
   vec2 d = fwidth(coord);
   // subtract 0.5 from coord to shift grid for half the square size

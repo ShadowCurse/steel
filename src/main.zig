@@ -285,8 +285,18 @@ pub const Camera = struct {
 pub const Grid = struct {
     cells: [Self.WIDTH][Self.HEIGHT]Cell = .{.{Cell{}} ** Self.HEIGHT} ** Self.WIDTH,
 
-    const WIDTH = 32;
-    const HEIGHT = 32;
+    pub const WIDTH = 32;
+    pub const HEIGHT = 32;
+    pub const RIGHT = Self.WIDTH / 2;
+    pub const LEFT = -Self.WIDTH / 2;
+    pub const TOP = Self.HEIGHT / 2;
+    pub const BOT = -Self.HEIGHT / 2;
+    pub const LIMITS: math.Vec4 = .{
+        .x = RIGHT,
+        .y = LEFT,
+        .z = TOP,
+        .w = BOT,
+    };
 
     const Cell = struct {
         type: CellType = .None,
@@ -318,18 +328,21 @@ pub const Grid = struct {
 
     const Self = @This();
 
-    pub fn set(self: *Self, x: i32, y: i32, @"type": CellType) void {
-        if (x < 0 or Self.WIDTH < x or y < 0 or Self.HEIGHT < y)
-            return;
+    inline fn in_range(x: i32, y: i32) ?struct { u32, u32 } {
+        if (x < Self.LEFT or Self.RIGHT < x or y < Self.BOT or Self.TOP <= y)
+            return null
+        else
+            return .{ @intCast(x + RIGHT), @intCast(y + TOP) };
+    }
 
-        self.cells[@intCast(x)][@intCast(y)].type = @"type";
+    pub fn set(self: *Self, x: i32, y: i32, @"type": CellType) void {
+        const xy = Self.in_range(x, y) orelse return;
+        self.cells[xy[0]][xy[1]].type = @"type";
     }
 
     pub fn unset(self: *Self, x: i32, y: i32) void {
-        if (x < 0 or Self.WIDTH < x or y < 0 or Self.HEIGHT < y)
-            return;
-
-        self.cells[@intCast(x)][@intCast(y)].type = .None;
+        const xy = Self.in_range(x, y) orelse return;
+        self.cells[xy[0]][xy[1]].type = .None;
     }
 };
 
@@ -494,8 +507,8 @@ pub const App = struct {
                 const tile_info = Grid.CellTypeInfo.get(cell.type);
                 const model = math.Mat4.IDENDITY
                     .translate(.{
-                        .x = @as(f32, @floatFromInt(x)) + 0.5,
-                        .y = @as(f32, @floatFromInt(y)) + 0.5,
+                        .x = @as(f32, @floatFromInt(x)) + 0.5 - Grid.RIGHT,
+                        .y = @as(f32, @floatFromInt(y)) + 0.5 - Grid.TOP,
                         .z = 0.0,
                     })
                     .scale(tile_info.scale);
@@ -533,6 +546,7 @@ pub const App = struct {
                 &camera.inverse_view,
                 &camera.inverse_projection,
                 self.debug_grid_scale,
+                &Grid.LIMITS,
             );
             self.debug_grid.draw();
         }

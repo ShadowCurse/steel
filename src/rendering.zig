@@ -271,6 +271,7 @@ pub const DebugGridShader = struct {
 
     view_loc: i32,
     projection_loc: i32,
+    limits_loc: i32,
     scale_loc: i32,
     inverse_view_loc: if (builtin.target.os.tag == .emscripten) i32 else void,
     inverse_projection_loc: if (builtin.target.os.tag == .emscripten) i32 else void,
@@ -285,6 +286,7 @@ pub const DebugGridShader = struct {
 
         const view_loc = shader.get_uniform_location("view");
         const projection_loc = shader.get_uniform_location("projection");
+        const limits_loc = shader.get_uniform_location("limits");
         const scale_loc = shader.get_uniform_location("scale");
 
         const inverse_view_loc = if (builtin.target.os.tag == .emscripten)
@@ -299,6 +301,7 @@ pub const DebugGridShader = struct {
             .shader = shader,
             .view_loc = view_loc,
             .projection_loc = projection_loc,
+            .limits_loc = limits_loc,
             .scale_loc = scale_loc,
             .inverse_view_loc = inverse_view_loc,
             .inverse_projection_loc = inverse_projection_loc,
@@ -312,10 +315,12 @@ pub const DebugGridShader = struct {
         camera_inverse_view: *const math.Mat4,
         camera_inverse_projection: *const math.Mat4,
         scale: f32,
+        limits: *const math.Vec4,
     ) void {
         self.shader.use();
         gl.glUniformMatrix4fv(self.view_loc, 1, gl.GL_FALSE, @ptrCast(camera_view));
         gl.glUniformMatrix4fv(self.projection_loc, 1, gl.GL_FALSE, @ptrCast(camera_projection));
+        gl.glUniform4f(self.limits_loc, limits.x, limits.y, limits.z, limits.w);
         gl.glUniform1f(self.scale_loc, scale);
 
         if (builtin.target.os.tag == .emscripten) {
