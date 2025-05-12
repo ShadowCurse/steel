@@ -282,8 +282,13 @@ pub const Camera = struct {
     }
 };
 
+pub const XY = packed struct(u16) { x: u8 = 0, y: u8 = 0 };
 pub const Grid = struct {
     cells: [Self.WIDTH][Self.HEIGHT]Cell = .{.{Cell{}} ** Self.HEIGHT} ** Self.WIDTH,
+    has_throne: bool = false,
+    throne_xy: XY = .{},
+    has_spawn: bool = false,
+    spawn_xy: XY = .{},
 
     pub const WIDTH = 32;
     pub const HEIGHT = 32;
@@ -338,21 +343,165 @@ pub const Grid = struct {
 
     const Self = @This();
 
-    inline fn in_range(x: i32, y: i32) ?struct { u32, u32 } {
+    inline fn in_range(x: i32, y: i32) ?XY {
         if (x < Self.LEFT or Self.RIGHT < x or y < Self.BOT or Self.TOP <= y)
             return null
         else
-            return .{ @intCast(x + RIGHT), @intCast(y + TOP) };
+            return .{ .x = @intCast(x + RIGHT), .y = @intCast(y + TOP) };
     }
 
     pub fn set(self: *Self, x: i32, y: i32, @"type": CellType) void {
         const xy = Self.in_range(x, y) orelse return;
-        self.cells[xy[0]][xy[1]].type = @"type";
+        const cell = &self.cells[xy.x][xy.y];
+
+        if (@"type" == .Throne)
+            if (!self.has_throne) {
+                self.has_throne = true;
+                self.throne_xy = xy;
+            } else return;
+        if (cell.type == .Throne)
+            self.has_throne = false;
+
+        if (@"type" == .Spawn)
+            if (!self.has_spawn) {
+                self.has_spawn = true;
+                self.spawn_xy = xy;
+            } else return;
+
+        if (cell.type == .Spawn)
+            self.has_spawn = false;
+
+        cell.type = @"type";
     }
 
     pub fn unset(self: *Self, x: i32, y: i32) void {
         const xy = Self.in_range(x, y) orelse return;
-        self.cells[xy[0]][xy[1]].type = .None;
+        const cell = &self.cells[xy.x][xy.y];
+        if (cell.type == .Throne)
+            self.has_throne = false;
+        if (cell.type == .Spawn)
+            self.has_spawn = false;
+        cell.type = .None;
+    }
+
+    fn distance_to_throne(self: *const Self, xy: XY) u8 {
+        const dx =
+            if (self.throne_xy.x < xy.x) xy.x - self.throne_xy.x else self.throne_xy.x - xy.x;
+        const dy =
+            if (self.throne_xy.y < xy.y) xy.y - self.throne_xy.y else self.throne_xy.y - xy.y;
+        return dx + dy;
+    }
+
+    const Item = packed struct(u32) {
+        xy: XY,
+        p: u16,
+
+        fn cmp(_: void, a: Item, b: Item) std.math.Order {
+            return std.math.order(a.p, b.p);
+        }
+    };
+    pub fn find_path(self: *Self, allocator: Allocator) !?[]XY {
+        if (!self.has_throne or !self.has_spawn)
+            return null;
+
+        var to_explore: std.PriorityQueue(Item, void, Item.cmp) = .init(allocator, void{});
+        defer to_explore.deinit();
+
+        var came_from: [Self.WIDTH][Self.HEIGHT]XY =
+            .{.{XY{ .x = 0, .y = 0 }} ** Self.HEIGHT} ** Self.WIDTH;
+        var g_score: [Self.WIDTH][Self.HEIGHT]u16 =
+            .{.{std.math.maxInt(u16)} ** Self.HEIGHT} ** Self.WIDTH;
+        var f_score: [Self.WIDTH][Self.HEIGHT]u16 =
+            .{.{std.math.maxInt(u16)} ** Self.HEIGHT} ** Self.WIDTH;
+
+        try to_explore.add(.{ .xy = self.spawn_xy, .p = 0 });
+        g_score[self.spawn_xy.x][self.spawn_xy.y] = 0;
+        f_score[self.spawn_xy.x][self.spawn_xy.y] = self.distance_to_throne(self.spawn_xy);
+
+        while (to_explore.removeOrNull()) |current| {
+            if (current.xy == self.throne_xy) {
+                var path: std.ArrayListUnmanaged(XY) = .{};
+
+                var i: u32 = 0;
+                var c = current.xy;
+                while (c != self.spawn_xy) : (i += 1) {
+                    c = came_from[c.x][c.y];
+                    try path.append(allocator, c);
+
+                    log.assert(
+                        @src(),
+                        i < Self.WIDTH * Self.HEIGHT,
+                        "Path is longer than number of cells on the grid",
+                        .{},
+                    );
+                }
+                return try path.toOwnedSlice(allocator);
+            }
+
+            const left: ?XY =
+                if (0 < current.xy.x) .{ .x = current.xy.x - 1, .y = current.xy.y } else null;
+            const right: ?XY =
+                if (current.xy.x < Self.WIDTH - 1)
+                    .{ .x = current.xy.x + 1, .y = current.xy.y }
+                else
+                    null;
+            const bot: ?XY =
+                if (0 < current.xy.y) .{ .x = current.xy.x, .y = current.xy.y - 1 } else null;
+            const top: ?XY =
+                if (current.xy.y < Self.HEIGHT - 1)
+                    .{ .x = current.xy.x, .y = current.xy.y + 1 }
+                else
+                    null;
+
+            const neightbors: [4]?XY = .{
+                if (left) |n|
+                    if (self.cells[n.x][n.y].type == .Floor or
+                        self.cells[n.x][n.y].type == .Throne) left else null
+                else
+                    null,
+                if (right) |n|
+                    if (self.cells[n.x][n.y].type == .Floor or
+                        self.cells[n.x][n.y].type == .Throne) right else null
+                else
+                    null,
+                if (bot) |n|
+                    if (self.cells[n.x][n.y].type == .Floor or
+                        self.cells[n.x][n.y].type == .Throne) bot else null
+                else
+                    null,
+                if (top) |n|
+                    if (self.cells[n.x][n.y].type == .Floor or
+                        self.cells[n.x][n.y].type == .Throne) top else null
+                else
+                    null,
+            };
+            for (neightbors) |n| {
+                if (n == null)
+                    continue;
+
+                const nn = n.?;
+                const new_g_score = g_score[current.xy.x][current.xy.y] + 1;
+                const old_g_score = g_score[nn.x][nn.y];
+                if (new_g_score < old_g_score) {
+                    came_from[nn.x][nn.y] = current.xy;
+                    g_score[nn.x][nn.y] = new_g_score;
+                    const new_f_score = new_g_score + self.distance_to_throne(nn);
+                    f_score[nn.x][nn.y] = new_f_score;
+
+                    var found: bool = false;
+                    for (to_explore.items) |te| {
+                        if (te.xy == nn) {
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found)
+                        try to_explore.add(.{ .xy = nn, .p = new_f_score });
+                }
+            }
+        }
+        log.info(@src(), "There is no path", .{});
+        return null;
     }
 };
 
@@ -371,6 +520,7 @@ pub const App = struct {
 
     grid: Grid,
     current_cell_type: Grid.CellType = .Floor,
+    current_path: []XY = &.{},
 
     const Self = @This();
 
@@ -506,6 +656,21 @@ pub const App = struct {
                 self.current_cell_type = .Spawn;
             if (cimgui.igSelectable_Bool("Throne", self.current_cell_type == .Throne, 0, .{}))
                 self.current_cell_type = .Throne;
+
+            _ = cimgui.igSeparatorText("Spawn XY");
+            _ = cimgui.igValue_Uint("x", self.grid.spawn_xy.x);
+            _ = cimgui.igValue_Uint("y", self.grid.spawn_xy.y);
+
+            _ = cimgui.igSeparatorText("Throne XY");
+            _ = cimgui.igValue_Uint("x", self.grid.throne_xy.x);
+            _ = cimgui.igValue_Uint("y", self.grid.throne_xy.y);
+
+            if (cimgui.igButton("Find path", .{})) {
+                if (try self.grid.find_path(self.allocator)) |new_path| {
+                    self.allocator.free(self.current_path);
+                    self.current_path = new_path;
+                }
+            }
         }
         cimgui.igRender();
 
@@ -537,6 +702,24 @@ pub const App = struct {
                 );
                 self.cube.draw();
             }
+        }
+        for (self.current_path) |c| {
+            const model = math.Mat4.IDENDITY
+                .translate(.{
+                    .x = @as(f32, @floatFromInt(c.x)) + 0.5 - Grid.RIGHT,
+                    .y = @as(f32, @floatFromInt(c.y)) + 0.5 - Grid.TOP,
+                    .z = 0.0,
+                }).scale(.{ .x = 0.5, .y = 0.5, .z = 1.5 });
+
+            self.mesh_shader.setup(
+                &camera.position,
+                &camera.view,
+                &camera.projection,
+                &model,
+                &.{ .x = 0.0, .y = 0.0, .z = 1.0 },
+                &.{ .x = 2.0, .y = 0.0, .z = 4.0 },
+            );
+            self.cube.draw();
         }
         {
             const cell_info = Grid.CellTypeInfo.get(self.current_cell_type);
