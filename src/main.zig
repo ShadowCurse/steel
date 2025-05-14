@@ -18,6 +18,10 @@ const DebugGrid = rendering.DebugGrid;
 const Allocator = std.mem.Allocator;
 const DebugAllocator = std.heap.DebugAllocator(.{});
 
+const memory = @import("memory.zig");
+const FixedArena = memory.FixedArena;
+const RoundArena = memory.RoundArena;
+
 const WINDOW_WIDTH = 1280;
 const WINDOW_HEIGHT = 720;
 
@@ -80,9 +84,15 @@ pub fn main() !void {
     gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA);
 
     var gpa = DebugAllocator{};
-    const allocator = gpa.allocator();
+    const gpa_alloc = gpa.allocator();
 
-    var app = App.init(allocator);
+    var frame_allocator = FixedArena.init(try gpa_alloc.alloc(u8, 4096));
+    const frame_alloc = frame_allocator.allocator();
+
+    var scratch_allocator = RoundArena.init(try gpa_alloc.alloc(u8, 4096));
+    const scratch_alloc = scratch_allocator.allocator();
+
+    var app = App.init(gpa_alloc, frame_alloc, scratch_alloc);
     var stop: bool = false;
 
     var app_events: [events.MAX_EVENTS]events.Event = undefined;
@@ -90,6 +100,8 @@ pub fn main() !void {
 
     var t = std.time.nanoTimestamp();
     while (!stop) {
+        frame_allocator.reset();
+
         const new_t = std.time.nanoTimestamp();
         const dt = @as(f32, @floatFromInt(new_t - t)) / std.time.ns_per_s;
         t = new_t;
@@ -506,7 +518,9 @@ pub const Grid = struct {
 };
 
 pub const App = struct {
-    allocator: Allocator,
+    gpa_alloc: Allocator,
+    frame_alloc: Allocator,
+    scratch_alloc: Allocator,
 
     mesh_shader: MeshShader,
     cube: Mesh,
@@ -524,7 +538,11 @@ pub const App = struct {
 
     const Self = @This();
 
-    pub fn init(allocator: Allocator) Self {
+    pub fn init(
+        gpa_alloc: Allocator,
+        frame_alloc: Allocator,
+        scratch_alloc: Allocator,
+    ) Self {
         const mesh_shader = MeshShader.init();
         const debug_grid_shader = DebugGridShader.init();
 
@@ -541,7 +559,9 @@ pub const App = struct {
         const grid: Grid = .{};
 
         return .{
-            .allocator = allocator,
+            .gpa_alloc = gpa_alloc,
+            .frame_alloc = frame_alloc,
+            .scratch_alloc = scratch_alloc,
             .mesh_shader = mesh_shader,
             .cube = cube,
             .debug_grid_shader = debug_grid_shader,
@@ -666,9 +686,10 @@ pub const App = struct {
             _ = cimgui.igValue_Uint("y", self.grid.throne_xy.y);
 
             if (cimgui.igButton("Find path", .{})) {
-                if (try self.grid.find_path(self.allocator)) |new_path| {
-                    self.allocator.free(self.current_path);
-                    self.current_path = new_path;
+                if (try self.grid.find_path(self.scratch_alloc)) |new_path| {
+                    self.gpa_alloc.free(self.current_path);
+                    self.current_path = try self.gpa_alloc.alloc(XY, new_path.len);
+                    @memcpy(self.current_path, new_path);
                 }
             }
         }
