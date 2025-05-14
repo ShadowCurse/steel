@@ -184,7 +184,10 @@ pub const Camera = struct {
             .Mouse => |mouse| {
                 switch (mouse) {
                     .Button => |button| {
-                        self.active = button.type == .Pressed;
+                        switch (button.key) {
+                            .WHEEL => self.active = button.type == .Pressed,
+                            else => {},
+                        }
                     },
                     .Motion => |motion| {
                         if (self.active) {
