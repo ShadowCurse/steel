@@ -33,19 +33,19 @@ pub const FileMem = struct {
     }
 };
 
-pub fn align_up(addr: u64, alignment: u64) u64 {
+pub fn align_up(addr: usize, alignment: usize) usize {
     log.assert(@src(), alignment != 0, "Alignment is zero", .{});
     return (addr + alignment - 1) & ~(alignment - 1);
 }
 
-pub fn align_down(addr: u64, alignment: u64) u64 {
+pub fn align_down(addr: usize, alignment: usize) usize {
     log.assert(@src(), alignment != 0, "Alignment is zero", .{});
     return addr & ~(alignment - 1);
 }
 
 pub const FixedArena = struct {
     mem: []u8 = &.{},
-    used: u64 = 0,
+    used: usize = 0,
 
     const Self = @This();
 
@@ -78,8 +78,8 @@ pub const FixedArena = struct {
         const remaining = self.mem.len - self.used;
         if (remaining < len) return null;
 
-        const mem_start: u64 = @intFromPtr(self.mem.ptr);
-        const end_addr: u64 = mem_start + self.used;
+        const mem_start: usize = @intFromPtr(self.mem.ptr);
+        const end_addr: usize = mem_start + self.used;
         const byte_align = alignment.toByteUnits();
         const aligned_start = align_up(end_addr, byte_align);
         const aligned_end = aligned_start + len;
@@ -120,7 +120,7 @@ pub const FixedArena = struct {
 
 pub const RoundArena = struct {
     mem: []u8 = &.{},
-    used: u64 = 0,
+    used: usize = 0,
 
     const Self = @This();
 
@@ -148,8 +148,8 @@ pub const RoundArena = struct {
 
         if (self.mem.len < len) return null;
 
-        const mem_start: u64 = @intFromPtr(self.mem.ptr);
-        const end_addr: u64 = mem_start + self.used;
+        const mem_start: usize = @intFromPtr(self.mem.ptr);
+        const end_addr: usize = mem_start + self.used;
         const byte_align = alignment.toByteUnits();
         var aligned_start = align_up(end_addr, byte_align);
         var aligned_end = aligned_start + len;
