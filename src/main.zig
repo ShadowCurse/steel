@@ -642,57 +642,71 @@ pub const App = struct {
             _ = cimgui.igBegin("options", &open, 0);
             defer cimgui.igEnd();
 
-            _ = cimgui.igSeparatorText("Mouse");
-            _ = cimgui.igValue_Uint("x", mouse_pos.x);
-            _ = cimgui.igValue_Uint("y", mouse_pos.y);
-            _ = cimgui.igSeparatorText("Mouse XY");
-            _ = cimgui.igValue_Float("x", mouse_xy.x, null);
-            _ = cimgui.igValue_Float("y", mouse_xy.y, null);
-            _ = cimgui.igSeparatorText("Mouse Grid XY");
-            _ = cimgui.igValue_Float("x", grid_xy.x, null);
-            _ = cimgui.igValue_Float("y", grid_xy.y, null);
-
-            _ = cimgui.igSeparatorText("Camera");
-            _ = cimgui.igCheckbox("Use top down camera", &self.use_topdown_camera);
-            _ = cimgui.igSeparatorText("Floating camera");
-            {
-                cimgui.igPushID_Int(0);
-                defer cimgui.igPopID();
-                self.floating_camera.imgui_options();
+            if (cimgui.igCollapsingHeader_BoolPtr("Mouse info", &open, 0)) {
+                _ = cimgui.igSeparatorText("Mouse");
+                _ = cimgui.igValue_Uint("x", mouse_pos.x);
+                _ = cimgui.igValue_Uint("y", mouse_pos.y);
+                _ = cimgui.igSeparatorText("Mouse XY");
+                _ = cimgui.igValue_Float("x", mouse_xy.x, null);
+                _ = cimgui.igValue_Float("y", mouse_xy.y, null);
+                _ = cimgui.igSeparatorText("Mouse Grid XY");
+                _ = cimgui.igValue_Float("x", grid_xy.x, null);
+                _ = cimgui.igValue_Float("y", grid_xy.y, null);
             }
-            _ = cimgui.igSeparatorText("Topdown camera");
-            {
-                cimgui.igPushID_Int(1);
-                defer cimgui.igPopID();
-                self.topdown_camera.imgui_options();
+
+            if (cimgui.igCollapsingHeader_BoolPtr("Camera", &open, 0)) {
+                _ = cimgui.igSeparatorText("Camera");
+                _ = cimgui.igCheckbox("Use top down camera", &self.use_topdown_camera);
+                _ = cimgui.igSeparatorText(
+                    if (!self.use_topdown_camera) "Floating camera +" else "Floating camera",
+                );
+                {
+                    cimgui.igPushID_Int(0);
+                    defer cimgui.igPopID();
+                    self.floating_camera.imgui_options();
+                }
+                _ = cimgui.igSeparatorText(
+                    if (self.use_topdown_camera) "Topdown camera +" else "Topdown camera",
+                );
+                {
+                    cimgui.igPushID_Int(1);
+                    defer cimgui.igPopID();
+                    self.topdown_camera.imgui_options();
+                }
             }
 
             _ = cimgui.igSeparatorText("Debug grid scale");
             _ = cimgui.igDragFloat("scale", &self.debug_grid_scale, 0.1, 1.0, 100.0, null, 0);
 
-            _ = cimgui.igSeparatorText("Cell type");
-            if (cimgui.igSelectable_Bool("Floor", self.current_cell_type == .Floor, 0, .{}))
-                self.current_cell_type = .Floor;
-            if (cimgui.igSelectable_Bool("Wall", self.current_cell_type == .Wall, 0, .{}))
-                self.current_cell_type = .Wall;
-            if (cimgui.igSelectable_Bool("Spawn", self.current_cell_type == .Spawn, 0, .{}))
-                self.current_cell_type = .Spawn;
-            if (cimgui.igSelectable_Bool("Throne", self.current_cell_type == .Throne, 0, .{}))
-                self.current_cell_type = .Throne;
+            if (cimgui.igCollapsingHeader_BoolPtr(
+                "Gameplay",
+                &open,
+                cimgui.ImGuiTreeNodeFlags_DefaultOpen,
+            )) {
+                _ = cimgui.igSeparatorText("Cell type");
+                if (cimgui.igSelectable_Bool("Floor", self.current_cell_type == .Floor, 0, .{}))
+                    self.current_cell_type = .Floor;
+                if (cimgui.igSelectable_Bool("Wall", self.current_cell_type == .Wall, 0, .{}))
+                    self.current_cell_type = .Wall;
+                if (cimgui.igSelectable_Bool("Spawn", self.current_cell_type == .Spawn, 0, .{}))
+                    self.current_cell_type = .Spawn;
+                if (cimgui.igSelectable_Bool("Throne", self.current_cell_type == .Throne, 0, .{}))
+                    self.current_cell_type = .Throne;
 
-            _ = cimgui.igSeparatorText("Spawn XY");
-            _ = cimgui.igValue_Uint("x", self.grid.spawn_xy.x);
-            _ = cimgui.igValue_Uint("y", self.grid.spawn_xy.y);
+                _ = cimgui.igSeparatorText("Spawn XY");
+                _ = cimgui.igValue_Uint("x", self.grid.spawn_xy.x);
+                _ = cimgui.igValue_Uint("y", self.grid.spawn_xy.y);
 
-            _ = cimgui.igSeparatorText("Throne XY");
-            _ = cimgui.igValue_Uint("x", self.grid.throne_xy.x);
-            _ = cimgui.igValue_Uint("y", self.grid.throne_xy.y);
+                _ = cimgui.igSeparatorText("Throne XY");
+                _ = cimgui.igValue_Uint("x", self.grid.throne_xy.x);
+                _ = cimgui.igValue_Uint("y", self.grid.throne_xy.y);
 
-            if (cimgui.igButton("Find path", .{})) {
-                if (try self.grid.find_path(self.scratch_alloc)) |new_path| {
-                    self.gpa_alloc.free(self.current_path);
-                    self.current_path = try self.gpa_alloc.alloc(XY, new_path.len);
-                    @memcpy(self.current_path, new_path);
+                if (cimgui.igButton("Find path", .{})) {
+                    if (try self.grid.find_path(self.scratch_alloc)) |new_path| {
+                        self.gpa_alloc.free(self.current_path);
+                        self.current_path = try self.gpa_alloc.alloc(XY, new_path.len);
+                        @memcpy(self.current_path, new_path);
+                    }
                 }
             }
         }
