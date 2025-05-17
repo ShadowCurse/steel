@@ -3,7 +3,12 @@ const _math = @import("math.zig");
 const Vec3 = _math.Vec3;
 const Vec4 = _math.Vec4;
 
-pub const MeshVertex = extern struct {
+indices: []const u32,
+vertices: []const Vertex,
+
+const Self = @This();
+
+pub const Vertex = extern struct {
     position: Vec3 = .{},
     uv_x: f32 = 0.0,
     normal: Vec3 = .{},
@@ -11,11 +16,11 @@ pub const MeshVertex = extern struct {
     color: Vec4 = .{},
 
     pub fn set_attributes() void {
-        gl.glVertexAttribPointer(0, 3, gl.GL_FLOAT, gl.GL_FALSE, @sizeOf(MeshVertex), @ptrFromInt(0));
-        gl.glVertexAttribPointer(1, 1, gl.GL_FLOAT, gl.GL_FALSE, @sizeOf(MeshVertex), @ptrFromInt(3 * @sizeOf(f32)));
-        gl.glVertexAttribPointer(2, 3, gl.GL_FLOAT, gl.GL_FALSE, @sizeOf(MeshVertex), @ptrFromInt(4 * @sizeOf(f32)));
-        gl.glVertexAttribPointer(3, 1, gl.GL_FLOAT, gl.GL_FALSE, @sizeOf(MeshVertex), @ptrFromInt(7 * @sizeOf(f32)));
-        gl.glVertexAttribPointer(4, 4, gl.GL_FLOAT, gl.GL_FALSE, @sizeOf(MeshVertex), @ptrFromInt(8 * @sizeOf(f32)));
+        gl.glVertexAttribPointer(0, 3, gl.GL_FLOAT, gl.GL_FALSE, @sizeOf(Vertex), @ptrFromInt(0));
+        gl.glVertexAttribPointer(1, 1, gl.GL_FLOAT, gl.GL_FALSE, @sizeOf(Vertex), @ptrFromInt(3 * @sizeOf(f32)));
+        gl.glVertexAttribPointer(2, 3, gl.GL_FLOAT, gl.GL_FALSE, @sizeOf(Vertex), @ptrFromInt(4 * @sizeOf(f32)));
+        gl.glVertexAttribPointer(3, 1, gl.GL_FLOAT, gl.GL_FALSE, @sizeOf(Vertex), @ptrFromInt(7 * @sizeOf(f32)));
+        gl.glVertexAttribPointer(4, 4, gl.GL_FLOAT, gl.GL_FALSE, @sizeOf(Vertex), @ptrFromInt(8 * @sizeOf(f32)));
         gl.glEnableVertexAttribArray(0);
         gl.glEnableVertexAttribArray(1);
         gl.glEnableVertexAttribArray(2);
@@ -24,8 +29,8 @@ pub const MeshVertex = extern struct {
     }
 };
 
-pub const Cube = struct {
-    pub const INDICES = [_]u32{
+pub const Cube = Self{
+    .indices = &.{
         1,
         14,
         20,
@@ -62,8 +67,8 @@ pub const Cube = struct {
         17,
         0,
         4,
-    };
-    pub const VERTICES = [_]MeshVertex{
+    },
+    .vertices = &.{
         .{
             .position = Vec3{ .x = 0.5, .y = 0.5, .z = -0.5 },
             .normal = Vec3{ .x = 0.0, .y = 0.0, .z = -1.0 },
@@ -232,5 +237,5 @@ pub const Cube = struct {
             .uv_y = 0.0,
             .color = Vec4{ .x = 0.0, .y = 0.0, .z = 1.0, .w = 1.0 },
         },
-    };
+    },
 };

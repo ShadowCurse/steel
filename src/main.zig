@@ -6,13 +6,13 @@ const gl = @import("bindings/gl.zig");
 const cimgui = @import("bindings/cimgui.zig");
 
 const math = @import("math.zig");
-const mesh = @import("mesh.zig");
+const Mesh = @import("mesh.zig");
 const events = @import("events.zig");
 
 const rendering = @import("rendering.zig");
 const MeshShader = rendering.MeshShader;
 const DebugGridShader = rendering.DebugGridShader;
-const Mesh = rendering.Mesh;
+const GpuMesh = rendering.Mesh;
 const DebugGrid = rendering.DebugGrid;
 
 const Allocator = std.mem.Allocator;
@@ -597,7 +597,7 @@ pub const App = struct {
     scratch_alloc: Allocator,
 
     mesh_shader: MeshShader,
-    cube: Mesh,
+    cube: GpuMesh,
     debug_grid_shader: DebugGridShader,
     debug_grid: DebugGrid,
     debug_grid_scale: f32 = 10.0,
@@ -621,7 +621,7 @@ pub const App = struct {
         const mesh_shader = MeshShader.init();
         const debug_grid_shader = DebugGridShader.init();
 
-        const cube = Mesh.init(mesh.MeshVertex, &mesh.Cube.VERTICES, &mesh.Cube.INDICES);
+        const cube = GpuMesh.init(Mesh.Vertex, Mesh.Cube.vertices, Mesh.Cube.indices);
         const debug_grid = DebugGrid.init();
 
         const floating_camera: Camera = .{ .position = .{ .y = -10.0 } };
