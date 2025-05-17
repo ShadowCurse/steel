@@ -518,6 +518,77 @@ pub const Grid = struct {
         log.info(@src(), "There is no path", .{});
         return null;
     }
+
+    const SaveState = struct {
+        cells: []const SavedCell,
+        has_throne: bool = false,
+        throne_xy: XY = .{},
+        has_spawn: bool = false,
+        spawn_xy: XY = .{},
+
+        const SavedCell = struct {
+            xy: XY,
+            cell: Cell,
+        };
+    };
+    pub fn save(self: *const Self, scratch_alloc: Allocator, path: []const u8) !void {
+        var file = try std.fs.cwd().createFile(path, .{});
+        defer file.close();
+
+        const options = std.json.StringifyOptions{
+            .whitespace = .indent_4,
+        };
+        var cells: std.ArrayListUnmanaged(SaveState.SavedCell) = .{};
+        for (0..Grid.WIDTH) |x| {
+            for (0..Grid.HEIGHT) |y| {
+                const cell = &self.cells[x][y];
+                if (cell.type == .None)
+                    continue;
+                try cells.append(scratch_alloc, .{
+                    .xy = .{ .x = @intCast(x), .y = @intCast(y) },
+                    .cell = cell.*,
+                });
+            }
+        }
+        const save_state = SaveState{
+            .cells = cells.items,
+            .has_throne = self.has_throne,
+            .throne_xy = self.throne_xy,
+            .has_spawn = self.has_spawn,
+            .spawn_xy = self.spawn_xy,
+        };
+        try std.json.stringify(save_state, options, file.writer());
+    }
+
+    pub fn load(self: *Self, scratch_alloc: Allocator, path: []const u8) !void {
+        const file_mem = try memory.FileMem.init(path);
+        defer file_mem.deinit();
+
+        const ss = try std.json.parseFromSlice(
+            SaveState,
+            scratch_alloc,
+            file_mem.mem,
+            .{},
+        );
+
+        const save_state = &ss.value;
+
+        for (0..Grid.WIDTH) |x| {
+            for (0..Grid.HEIGHT) |y| {
+                const cell = &self.cells[x][y];
+                for (save_state.cells) |s_cell| {
+                    if (s_cell.xy == XY{ .x = @intCast(x), .y = @intCast(y) }) {
+                        cell.* = s_cell.cell;
+                        break;
+                    } else cell.* = .{};
+                }
+            }
+        }
+        self.has_throne = save_state.has_throne;
+        self.throne_xy = save_state.throne_xy;
+        self.has_spawn = save_state.has_spawn;
+        self.spawn_xy = save_state.spawn_xy;
+    }
 };
 
 pub const App = struct {
@@ -535,6 +606,7 @@ pub const App = struct {
     topdown_camera: Camera,
     use_topdown_camera: bool = false,
 
+    level_path: [256]u8 = .{0} ** 256,
     grid: Grid,
     current_cell_type: Grid.CellType = .Floor,
     current_path: []XY = &.{},
@@ -561,7 +633,7 @@ pub const App = struct {
 
         const grid: Grid = .{};
 
-        return .{
+        var self = Self{
             .gpa_alloc = gpa_alloc,
             .frame_alloc = frame_alloc,
             .scratch_alloc = scratch_alloc,
@@ -573,6 +645,9 @@ pub const App = struct {
             .topdown_camera = topdown_camera,
             .grid = grid,
         };
+        const default_path = "resources/level.json";
+        @memcpy(self.level_path[0..default_path.len], default_path);
+        return self;
     }
 
     pub fn update(
@@ -679,9 +754,8 @@ pub const App = struct {
 
             _ = cimgui.igSeparatorText("Debug grid scale");
             _ = cimgui.igDragFloat("scale", &self.debug_grid_scale, 0.1, 1.0, 100.0, null, 0);
-
             if (cimgui.igCollapsingHeader_BoolPtr(
-                "Gameplay",
+                "Level",
                 &open,
                 cimgui.ImGuiTreeNodeFlags_DefaultOpen,
             )) {
@@ -709,6 +783,25 @@ pub const App = struct {
                         self.current_path = try self.gpa_alloc.alloc(XY, new_path.len);
                         @memcpy(self.current_path, new_path);
                     }
+                }
+
+                _ = cimgui.igSeparatorText("Level Save/Load");
+                _ = cimgui.igInputText(
+                    "File path",
+                    &self.level_path,
+                    self.level_path.len,
+                    0,
+                    null,
+                    null,
+                );
+                const path = std.mem.sliceTo(&self.level_path, 0);
+                if (cimgui.igButton("Save level", .{})) {
+                    self.grid.save(self.scratch_alloc, path) catch
+                        log.err(@src(), "Cannot save level to {s}", .{path});
+                }
+                if (cimgui.igButton("Load level", .{})) {
+                    self.grid.load(self.scratch_alloc, path) catch
+                        log.err(@src(), "Cannot load level from {s}", .{path});
                 }
             }
         }
