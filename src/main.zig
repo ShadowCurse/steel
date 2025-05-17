@@ -609,10 +609,6 @@ pub const App = struct {
         }
         camera.move(dt);
 
-        cimgui.ImGui_ImplOpenGL3_NewFrame();
-        cimgui.ImGui_ImplSDL3_NewFrame();
-        cimgui.igNewFrame();
-
         const mouse_clip = math.Vec3{
             .x = (@as(f32, @floatFromInt(mouse_pos.x)) / WINDOW_WIDTH * 2.0) - 1.0,
             .y = -((@as(f32, @floatFromInt(mouse_pos.y)) / WINDOW_HEIGHT * 2.0) - 1.0),
@@ -639,6 +635,12 @@ pub const App = struct {
 
         {
             var open: bool = true;
+
+            cimgui.ImGui_ImplOpenGL3_NewFrame();
+            cimgui.ImGui_ImplSDL3_NewFrame();
+            cimgui.igNewFrame();
+            defer cimgui.igRender();
+
             _ = cimgui.igBegin("options", &open, 0);
             defer cimgui.igEnd();
 
@@ -710,7 +712,6 @@ pub const App = struct {
                 }
             }
         }
-        cimgui.igRender();
 
         gl.glClearDepth(0.0);
         gl.glClearColor(0.0, 0.0, 0.0, 1.0);
