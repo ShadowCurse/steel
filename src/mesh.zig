@@ -3,11 +3,13 @@ const _math = @import("math.zig");
 const Vec3 = _math.Vec3;
 const Vec4 = _math.Vec4;
 
+name: []const u8,
 indices: []const u32,
 vertices: []const Vertex,
 
 const Self = @This();
 
+pub const Index = u32;
 pub const Vertex = extern struct {
     position: Vec3 = .{},
     uv_x: f32 = 0.0,
@@ -30,6 +32,7 @@ pub const Vertex = extern struct {
 };
 
 pub const Cube = Self{
+    .name = "Cube",
     .indices = &.{
         1,
         14,

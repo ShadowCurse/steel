@@ -196,7 +196,6 @@ pub const Mesh = struct {
         gl.glGenVertexArrays(1, &vertex_array);
         gl.glBindVertexArray(vertex_array);
         gl.glBindBuffer(gl.GL_ARRAY_BUFFER, vertex_buffer);
-        gl.glBindBuffer(gl.GL_ELEMENT_ARRAY_BUFFER, index_buffer);
         VERTEX_TYPE.set_attributes();
 
         return .{
@@ -209,6 +208,7 @@ pub const Mesh = struct {
 
     pub fn draw(self: *const Self) void {
         gl.glBindVertexArray(self.vertex_array);
+        gl.glBindBuffer(gl.GL_ELEMENT_ARRAY_BUFFER, self.index_buffer);
         gl.glDrawElements(gl.GL_TRIANGLES, self.n_indices, gl.GL_UNSIGNED_INT, null);
     }
 };

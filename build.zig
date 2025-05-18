@@ -54,12 +54,26 @@ pub fn build(b: *std.Build) !void {
     if (target.result.os.tag != .emscripten) {
         const run_cmd = b.addRunArtifact(artifact);
         run_cmd.step.dependOn(b.getInstallStep());
-        if (b.args) |args| {
-            run_cmd.addArgs(args);
-        }
 
         const run_step = b.step("run", "Run the app");
         run_step.dependOn(&run_cmd.step);
+
+        const asset_packer = b.addExecutable(.{
+            .name = "asset_packer",
+            .root_source_file = b.path("src/asset_packer.zig"),
+            .target = target,
+            .optimize = optimize,
+        });
+        asset_packer.addIncludePath(b.path("thirdparty/cgltf/"));
+        asset_packer.addCSourceFile(.{ .file = b.path("thirdparty/cgltf/cgltf.c") });
+        asset_packer.linkLibC();
+
+        b.installArtifact(asset_packer);
+        const pack_cmd = b.addRunArtifact(asset_packer);
+        pack_cmd.step.dependOn(b.getInstallStep());
+
+        const pack_step = b.step("pack", "Pack assets");
+        pack_step.dependOn(&pack_cmd.step);
     }
 }
 

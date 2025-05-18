@@ -55,6 +55,10 @@ pub const FixedArena = struct {
         };
     }
 
+    pub fn slice(self: *const Self) []const u8 {
+        return self.mem[0..self.used];
+    }
+
     pub fn reset(self: *Self) void {
         self.used = 0;
     }

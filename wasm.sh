@@ -1,6 +1,10 @@
 #!/bin/bash
 
-cp -r resources wasm
+rm -r wasm/resources
+mkdir wasm/resources
+cp -r resources/shaders wasm/resources
+cp -r resources/level.json wasm/resources
+cp -r resources/packed.p wasm/resources
 cd wasm
 
 emcc \

@@ -22,6 +22,8 @@ const memory = @import("memory.zig");
 const FixedArena = memory.FixedArena;
 const RoundArena = memory.RoundArena;
 
+const assets = @import("assets.zig");
+
 const WINDOW_WIDTH = 1280;
 const WINDOW_HEIGHT = 720;
 
@@ -331,26 +333,21 @@ pub const Grid = struct {
     };
 
     const CellInfo = struct {
-        scale: math.Vec3 = .{},
         color: math.Vec3 = .{},
     };
     const CellTypeInfo = std.EnumArray(CellType, CellInfo).init(
         .{
             .None = .{},
             .Floor = .{
-                .scale = .{ .x = 1.0, .y = 1.0, .z = 0.2 },
                 .color = .ONE,
             },
             .Wall = .{
-                .scale = .{ .x = 1.0, .y = 1.0, .z = 1.0 },
                 .color = .{ .x = 0.5, .y = 0.5, .z = 0.5 },
             },
             .Spawn = .{
-                .scale = .{ .x = 1.0, .y = 1.0, .z = 0.5 },
                 .color = .{ .x = 1.0, .y = 0.0, .z = 0.0 },
             },
             .Throne = .{
-                .scale = .{ .x = 1.0, .y = 1.0, .z = 1.5 },
                 .color = .{ .x = 0.9, .y = 0.8, .z = 0.01 },
             },
         },
@@ -598,6 +595,10 @@ pub const App = struct {
 
     mesh_shader: MeshShader,
     cube: GpuMesh,
+    floor: GpuMesh,
+    wall: GpuMesh,
+    spawn: GpuMesh,
+    throne: GpuMesh,
     debug_grid_shader: DebugGridShader,
     debug_grid: DebugGrid,
     debug_grid_scale: f32 = 10.0,
@@ -621,7 +622,21 @@ pub const App = struct {
         const mesh_shader = MeshShader.init();
         const debug_grid_shader = DebugGridShader.init();
 
+        const meshes_mem = gpa_alloc.alloc(u8, 4096 * 4) catch unreachable;
+        defer gpa_alloc.free(meshes_mem);
+        var meshes_allocator = FixedArena.init(meshes_mem);
+        const meshes_alloc = meshes_allocator.allocator();
+
+        const mem = memory.FileMem.init(assets.DEFAULT_PACKED_ASSETS_PATH) catch unreachable;
+        defer mem.deinit();
+        const meshes = assets.unpack(meshes_alloc, mem.mem) catch unreachable;
+
         const cube = GpuMesh.init(Mesh.Vertex, Mesh.Cube.vertices, Mesh.Cube.indices);
+        const spawn = GpuMesh.init(Mesh.Vertex, meshes[0].vertices, meshes[0].indices);
+        const wall = GpuMesh.init(Mesh.Vertex, meshes[1].vertices, meshes[1].indices);
+        const floor = GpuMesh.init(Mesh.Vertex, meshes[2].vertices, meshes[2].indices);
+        const throne = GpuMesh.init(Mesh.Vertex, meshes[3].vertices, meshes[3].indices);
+
         const debug_grid = DebugGrid.init();
 
         const floating_camera: Camera = .{ .position = .{ .y = -10.0 } };
@@ -639,6 +654,10 @@ pub const App = struct {
             .scratch_alloc = scratch_alloc,
             .mesh_shader = mesh_shader,
             .cube = cube,
+            .floor = floor,
+            .wall = wall,
+            .spawn = spawn,
+            .throne = throne,
             .debug_grid_shader = debug_grid_shader,
             .debug_grid = debug_grid,
             .floating_camera = floating_camera,
@@ -818,11 +837,10 @@ pub const App = struct {
                 const tile_info = Grid.CellTypeInfo.get(cell.type);
                 const model = math.Mat4.IDENDITY
                     .translate(.{
-                        .x = @as(f32, @floatFromInt(x)) + 0.5 - Grid.RIGHT,
-                        .y = @as(f32, @floatFromInt(y)) + 0.5 - Grid.TOP,
-                        .z = 0.0,
-                    })
-                    .scale(tile_info.scale);
+                    .x = @as(f32, @floatFromInt(x)) + 0.5 - Grid.RIGHT,
+                    .y = @as(f32, @floatFromInt(y)) + 0.5 - Grid.TOP,
+                    .z = 0.0,
+                });
 
                 self.mesh_shader.setup(
                     &camera.position,
@@ -832,7 +850,13 @@ pub const App = struct {
                     &tile_info.color,
                     &.{ .x = 2.0, .y = 0.0, .z = 4.0 },
                 );
-                self.cube.draw();
+                switch (cell.type) {
+                    .None => {},
+                    .Floor => self.floor.draw(),
+                    .Wall => self.wall.draw(),
+                    .Spawn => self.spawn.draw(),
+                    .Throne => self.throne.draw(),
+                }
             }
         }
         for (self.current_path) |c| {
@@ -855,7 +879,7 @@ pub const App = struct {
         }
         {
             const cell_info = Grid.CellTypeInfo.get(self.current_cell_type);
-            const model = math.Mat4.IDENDITY.translate(grid_xy).scale(cell_info.scale);
+            const model = math.Mat4.IDENDITY.translate(grid_xy);
 
             self.mesh_shader.setup(
                 &camera.position,
@@ -865,7 +889,13 @@ pub const App = struct {
                 &cell_info.color,
                 &.{ .x = 2.0, .y = 0.0, .z = 4.0 },
             );
-            self.cube.draw();
+            switch (self.current_cell_type) {
+                .None => {},
+                .Floor => self.floor.draw(),
+                .Wall => self.wall.draw(),
+                .Spawn => self.spawn.draw(),
+                .Throne => self.throne.draw(),
+            }
         }
 
         {
