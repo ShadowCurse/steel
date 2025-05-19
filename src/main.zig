@@ -708,6 +708,8 @@ pub const App = struct {
             _ = cimgui.igBegin("options", &open, 0);
             defer cimgui.igEnd();
 
+            var cimgui_id: i32 = 0;
+
             if (cimgui.igCollapsingHeader_BoolPtr("Mouse info", &open, 0)) {
                 _ = cimgui.igSeparatorText("Mouse");
                 _ = cimgui.igValue_Uint("x", mouse_pos.x);
@@ -727,7 +729,8 @@ pub const App = struct {
                     if (!self.use_topdown_camera) "Floating camera +" else "Floating camera",
                 );
                 {
-                    cimgui.igPushID_Int(0);
+                    cimgui.igPushID_Int(cimgui_id);
+                    cimgui_id += 1;
                     defer cimgui.igPopID();
                     self.floating_camera.imgui_options();
                 }
@@ -735,7 +738,8 @@ pub const App = struct {
                     if (self.use_topdown_camera) "Topdown camera +" else "Topdown camera",
                 );
                 {
-                    cimgui.igPushID_Int(1);
+                    cimgui.igPushID_Int(cimgui_id);
+                    cimgui_id += 1;
                     defer cimgui.igPopID();
                     self.topdown_camera.imgui_options();
                 }
@@ -743,6 +747,20 @@ pub const App = struct {
 
             _ = cimgui.igSeparatorText("Debug grid scale");
             _ = cimgui.igDragFloat("scale", &self.debug_grid_scale, 0.1, 1.0, 100.0, null, 0);
+
+            if (cimgui.igCollapsingHeader_BoolPtr("Materials", &open, 0)) {
+                var iter = self.materials.iterator();
+                while (iter.next()) |m| {
+                    cimgui.igPushID_Int(cimgui_id);
+                    cimgui_id += 1;
+                    defer cimgui.igPopID();
+
+                    _ = cimgui.igColorEdit4("albedo", @ptrCast(&m.value.albedo), 0);
+                    _ = cimgui.igSliderFloat("metallic", &m.value.metallic, 0.0, 1.0, null, 0);
+                    _ = cimgui.igSliderFloat("roughness", &m.value.roughness, 0.0, 1.0, null, 0);
+                }
+            }
+
             if (cimgui.igCollapsingHeader_BoolPtr(
                 "Level",
                 &open,
@@ -810,13 +828,17 @@ pub const App = struct {
                         .z = 0.0,
                     });
 
+                    const m = self.materials.getPtr(cell_type);
                     self.mesh_shader.setup(
                         &camera.position,
                         &camera.view,
                         &camera.projection,
                         &model,
-                        &self.materials.get(cell_type).albedo,
                         &.{ .x = 2.0, .y = 0.0, .z = 4.0 },
+                        &m.albedo,
+                        m.metallic,
+                        m.roughness,
+                        1.0,
                     );
                     switch (cell_type) {
                         .Floor => self.floor.draw(),
@@ -840,20 +862,27 @@ pub const App = struct {
                 &camera.view,
                 &camera.projection,
                 &model,
-                &.{ .x = 0.0, .y = 0.0, .z = 1.0 },
                 &.{ .x = 2.0, .y = 0.0, .z = 4.0 },
+                &.{ .x = 0.0, .y = 0.0, .z = 1.0 },
+                0.0,
+                0.0,
+                1.0,
             );
             self.cube.draw();
         }
         {
             const model = math.Mat4.IDENDITY.translate(grid_xy);
+            const m = self.materials.getPtr(self.current_cell_type);
             self.mesh_shader.setup(
                 &camera.position,
                 &camera.view,
                 &camera.projection,
                 &model,
-                &self.materials.get(self.current_cell_type).albedo,
                 &.{ .x = 2.0, .y = 0.0, .z = 4.0 },
+                &m.albedo,
+                m.metallic,
+                m.roughness,
+                1.0,
             );
             switch (self.current_cell_type) {
                 .Floor => self.floor.draw(),
