@@ -119,14 +119,14 @@ pub fn main() !void {
             }
         }
         const mouse_pos = events.get_mouse_pos();
-        const new_events =
-            if (imgui_io.WantCaptureMouse or
+        const imgui_handling_event = imgui_io.WantCaptureMouse or
             imgui_io.WantCaptureKeyboard or
-            imgui_io.WantTextInput)
-                &.{}
-            else
-                events.parse_sdl_events(new_sdl_events, &app_events);
-        try app.update(new_events, mouse_pos, dt);
+            imgui_io.WantTextInput;
+        const new_events = if (imgui_handling_event)
+            &.{}
+        else
+            events.parse_sdl_events(new_sdl_events, &app_events);
+        try app.update(new_events, imgui_handling_event, mouse_pos, dt);
 
         sdl.assert(@src(), sdl.SDL_GL_SwapWindow(window));
     }
@@ -642,6 +642,7 @@ pub const App = struct {
     pub fn update(
         self: *Self,
         new_events: []const events.Event,
+        imgui_handling_event: bool,
         mouse_pos: events.MousePosition,
         dt: f32,
     ) !void {
@@ -649,6 +650,9 @@ pub const App = struct {
             &self.topdown_camera
         else
             &self.floating_camera;
+
+        if (imgui_handling_event)
+            camera.velocity = .{};
 
         var lmb_pressed: bool = false;
         var rmb_pressed: bool = false;
