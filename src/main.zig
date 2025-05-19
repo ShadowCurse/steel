@@ -12,7 +12,7 @@ const events = @import("events.zig");
 const rendering = @import("rendering.zig");
 const MeshShader = rendering.MeshShader;
 const DebugGridShader = rendering.DebugGridShader;
-const GpuMesh = rendering.Mesh;
+const GpuMesh = rendering.GpuMesh;
 const DebugGrid = rendering.DebugGrid;
 
 const Allocator = std.mem.Allocator;
@@ -321,37 +321,8 @@ pub const Grid = struct {
     };
 
     const Cell = struct {
-        type: CellType = .None,
+        type: ?assets.ModelType = null,
     };
-
-    const CellType = enum {
-        None,
-        Floor,
-        Wall,
-        Spawn,
-        Throne,
-    };
-
-    const CellInfo = struct {
-        color: math.Vec3 = .{},
-    };
-    const CellTypeInfo = std.EnumArray(CellType, CellInfo).init(
-        .{
-            .None = .{},
-            .Floor = .{
-                .color = .ONE,
-            },
-            .Wall = .{
-                .color = .{ .x = 0.5, .y = 0.5, .z = 0.5 },
-            },
-            .Spawn = .{
-                .color = .{ .x = 1.0, .y = 0.0, .z = 0.0 },
-            },
-            .Throne = .{
-                .color = .{ .x = 0.9, .y = 0.8, .z = 0.01 },
-            },
-        },
-    );
 
     const Self = @This();
 
@@ -362,7 +333,7 @@ pub const Grid = struct {
             return .{ .x = @intCast(x + RIGHT), .y = @intCast(y + TOP) };
     }
 
-    pub fn set(self: *Self, x: i32, y: i32, @"type": CellType) void {
+    pub fn set(self: *Self, x: i32, y: i32, @"type": assets.ModelType) void {
         const xy = Self.in_range(x, y) orelse return;
         const cell = &self.cells[xy.x][xy.y];
 
@@ -393,7 +364,7 @@ pub const Grid = struct {
             self.has_throne = false;
         if (cell.type == .Spawn)
             self.has_spawn = false;
-        cell.type = .None;
+        cell.type = null;
     }
 
     fn distance_to_throne(self: *const Self, xy: XY) u8 {
@@ -539,12 +510,11 @@ pub const Grid = struct {
         for (0..Grid.WIDTH) |x| {
             for (0..Grid.HEIGHT) |y| {
                 const cell = &self.cells[x][y];
-                if (cell.type == .None)
-                    continue;
-                try cells.append(scratch_alloc, .{
-                    .xy = .{ .x = @intCast(x), .y = @intCast(y) },
-                    .cell = cell.*,
-                });
+                if (cell.type) |_|
+                    try cells.append(scratch_alloc, .{
+                        .xy = .{ .x = @intCast(x), .y = @intCast(y) },
+                        .cell = cell.*,
+                    });
             }
         }
         const save_state = SaveState{
@@ -594,6 +564,7 @@ pub const App = struct {
     scratch_alloc: Allocator,
 
     mesh_shader: MeshShader,
+    materials: assets.Materials,
     cube: GpuMesh,
     floor: GpuMesh,
     wall: GpuMesh,
@@ -609,7 +580,7 @@ pub const App = struct {
 
     level_path: [256]u8 = .{0} ** 256,
     grid: Grid,
-    current_cell_type: Grid.CellType = .Floor,
+    current_cell_type: assets.ModelType = .Floor,
     current_path: []XY = &.{},
 
     const Self = @This();
@@ -624,18 +595,16 @@ pub const App = struct {
 
         const meshes_mem = gpa_alloc.alloc(u8, 4096 * 4) catch unreachable;
         defer gpa_alloc.free(meshes_mem);
-        var meshes_allocator = FixedArena.init(meshes_mem);
-        const meshes_alloc = meshes_allocator.allocator();
 
         const mem = memory.FileMem.init(assets.DEFAULT_PACKED_ASSETS_PATH) catch unreachable;
         defer mem.deinit();
-        const meshes = assets.unpack(meshes_alloc, mem.mem) catch unreachable;
+        const unpack_result = assets.unpack(mem.mem) catch unreachable;
 
         const cube = GpuMesh.init(Mesh.Vertex, Mesh.Cube.vertices, Mesh.Cube.indices);
-        const spawn = GpuMesh.init(Mesh.Vertex, meshes[0].vertices, meshes[0].indices);
-        const wall = GpuMesh.init(Mesh.Vertex, meshes[1].vertices, meshes[1].indices);
-        const floor = GpuMesh.init(Mesh.Vertex, meshes[2].vertices, meshes[2].indices);
-        const throne = GpuMesh.init(Mesh.Vertex, meshes[3].vertices, meshes[3].indices);
+        const spawn = GpuMesh.from_mesh(unpack_result.meshes.getPtrConst(.Spawn));
+        const wall = GpuMesh.from_mesh(unpack_result.meshes.getPtrConst(.Wall));
+        const floor = GpuMesh.from_mesh(unpack_result.meshes.getPtrConst(.Floor));
+        const throne = GpuMesh.from_mesh(unpack_result.meshes.getPtrConst(.Throne));
 
         const debug_grid = DebugGrid.init();
 
@@ -653,6 +622,7 @@ pub const App = struct {
             .frame_alloc = frame_alloc,
             .scratch_alloc = scratch_alloc,
             .mesh_shader = mesh_shader,
+            .materials = unpack_result.materials,
             .cube = cube,
             .floor = floor,
             .wall = wall,
@@ -832,30 +802,28 @@ pub const App = struct {
         for (0..Grid.WIDTH) |x| {
             for (0..Grid.HEIGHT) |y| {
                 const cell = &self.grid.cells[x][y];
-                if (cell.type == .None)
-                    continue;
-                const tile_info = Grid.CellTypeInfo.get(cell.type);
-                const model = math.Mat4.IDENDITY
-                    .translate(.{
-                    .x = @as(f32, @floatFromInt(x)) + 0.5 - Grid.RIGHT,
-                    .y = @as(f32, @floatFromInt(y)) + 0.5 - Grid.TOP,
-                    .z = 0.0,
-                });
+                if (cell.type) |cell_type| {
+                    const model = math.Mat4.IDENDITY
+                        .translate(.{
+                        .x = @as(f32, @floatFromInt(x)) + 0.5 - Grid.RIGHT,
+                        .y = @as(f32, @floatFromInt(y)) + 0.5 - Grid.TOP,
+                        .z = 0.0,
+                    });
 
-                self.mesh_shader.setup(
-                    &camera.position,
-                    &camera.view,
-                    &camera.projection,
-                    &model,
-                    &tile_info.color,
-                    &.{ .x = 2.0, .y = 0.0, .z = 4.0 },
-                );
-                switch (cell.type) {
-                    .None => {},
-                    .Floor => self.floor.draw(),
-                    .Wall => self.wall.draw(),
-                    .Spawn => self.spawn.draw(),
-                    .Throne => self.throne.draw(),
+                    self.mesh_shader.setup(
+                        &camera.position,
+                        &camera.view,
+                        &camera.projection,
+                        &model,
+                        &self.materials.get(cell_type).albedo,
+                        &.{ .x = 2.0, .y = 0.0, .z = 4.0 },
+                    );
+                    switch (cell_type) {
+                        .Floor => self.floor.draw(),
+                        .Wall => self.wall.draw(),
+                        .Spawn => self.spawn.draw(),
+                        .Throne => self.throne.draw(),
+                    }
                 }
             }
         }
@@ -878,19 +846,16 @@ pub const App = struct {
             self.cube.draw();
         }
         {
-            const cell_info = Grid.CellTypeInfo.get(self.current_cell_type);
             const model = math.Mat4.IDENDITY.translate(grid_xy);
-
             self.mesh_shader.setup(
                 &camera.position,
                 &camera.view,
                 &camera.projection,
                 &model,
-                &cell_info.color,
+                &self.materials.get(self.current_cell_type).albedo,
                 &.{ .x = 2.0, .y = 0.0, .z = 4.0 },
             );
             switch (self.current_cell_type) {
-                .None => {},
                 .Floor => self.floor.draw(),
                 .Wall => self.wall.draw(),
                 .Spawn => self.spawn.draw(),

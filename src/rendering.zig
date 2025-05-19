@@ -4,6 +4,7 @@ const log = @import("log.zig");
 const gl = @import("bindings/gl.zig");
 const math = @import("math.zig");
 const FileMem = @import("memory.zig").FileMem;
+const Mesh = @import("mesh.zig");
 
 pub const Shader = struct {
     vertex_shader: u32,
@@ -149,7 +150,7 @@ pub const MeshShader = struct {
         camera_view: *const math.Mat4,
         camera_projection: *const math.Mat4,
         model: *const math.Mat4,
-        color: *const math.Vec3,
+        color: *const math.Vec4,
         light_position: *const math.Vec3,
     ) void {
         self.shader.use();
@@ -162,7 +163,7 @@ pub const MeshShader = struct {
     }
 };
 
-pub const Mesh = struct {
+pub const GpuMesh = struct {
     vertex_buffer: u32,
     index_buffer: u32,
     n_indices: i32,
@@ -204,6 +205,10 @@ pub const Mesh = struct {
             .n_indices = n_indices,
             .vertex_array = vertex_array,
         };
+    }
+
+    pub fn from_mesh(mesh: *const Mesh) Self {
+        return Self.init(Mesh.Vertex, mesh.vertices, mesh.indices);
     }
 
     pub fn draw(self: *const Self) void {

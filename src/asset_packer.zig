@@ -6,6 +6,14 @@ const memory = @import("memory.zig");
 const DebugAllocator = std.heap.DebugAllocator(.{});
 const RoundArena = memory.RoundArena;
 
+const ModelPathsType = std.EnumArray(assets.ModelType, [:0]const u8);
+const MODEL_PATHS = ModelPathsType.init(.{
+    .Floor = assets.DEFAULT_MESHES_DIR_PATH ++ "/floor.glb",
+    .Wall = assets.DEFAULT_MESHES_DIR_PATH ++ "/wall.glb",
+    .Spawn = assets.DEFAULT_MESHES_DIR_PATH ++ "/spawn.glb",
+    .Throne = assets.DEFAULT_MESHES_DIR_PATH ++ "/throne.glb",
+});
+
 pub fn main() !void {
     var gpa = DebugAllocator{};
     const gpa_alloc = gpa.allocator();
@@ -13,20 +21,18 @@ pub fn main() !void {
     var scratch_allocator = RoundArena.init(try gpa_alloc.alloc(u8, 4096));
     const scratch_alloc = scratch_allocator.allocator();
 
-    var meshes_dir = try std.fs.cwd().openDir(assets.DEFAULT_MESHES_DIR_PATH, .{ .iterate = true });
-    defer meshes_dir.close();
-
     var packer: assets.Packer = .{};
-    var meshes_dir_iter = meshes_dir.iterate();
-    while (try meshes_dir_iter.next()) |entry| {
-        log.info(@src(), "Found mesh at: {s}", .{entry.name});
-        const mesh_path = try std.fmt.allocPrintZ(
+    for (0..ModelPathsType.len) |i| {
+        const model_type = ModelPathsType.Indexer.keyForIndex(i);
+        const path = MODEL_PATHS.values[i];
+
+        packer.add_model(
+            gpa_alloc,
             scratch_alloc,
-            "{s}/{s}",
-            .{ assets.DEFAULT_MESHES_DIR_PATH, entry.name },
-        );
-        packer.add_mesh(gpa_alloc, scratch_alloc, mesh_path) catch |e| {
-            log.err(@src(), "Error loading mesh from path: {s}: {}", .{ mesh_path, e });
+            path,
+            model_type,
+        ) catch |e| {
+            log.err(@src(), "Error loading model from path: {s}: {}", .{ path, e });
         };
     }
 
