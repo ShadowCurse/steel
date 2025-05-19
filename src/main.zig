@@ -579,6 +579,7 @@ pub const App = struct {
     use_topdown_camera: bool = false,
 
     level_path: [256]u8 = .{0} ** 256,
+    show_grid: bool = true,
     grid: Grid,
     current_cell_type: assets.ModelType = .Floor,
     current_path: []XY = &.{},
@@ -749,8 +750,10 @@ pub const App = struct {
                 }
             }
 
-            _ = cimgui.igSeparatorText("Debug grid scale");
-            _ = cimgui.igDragFloat("scale", &self.debug_grid_scale, 0.1, 1.0, 100.0, null, 0);
+            if (cimgui.igCollapsingHeader_BoolPtr("Debug grid", &open, 0)) {
+                _ = cimgui.igCheckbox("Enabled", &self.show_grid);
+                _ = cimgui.igDragFloat("scale", &self.debug_grid_scale, 0.1, 1.0, 100.0, null, 0);
+            }
 
             if (cimgui.igCollapsingHeader_BoolPtr("Materials", &open, 0)) {
                 var iter = self.materials.iterator();
@@ -896,7 +899,7 @@ pub const App = struct {
             }
         }
 
-        {
+        if (self.show_grid) {
             self.debug_grid_shader.setup(
                 &camera.view,
                 &camera.projection,
