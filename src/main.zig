@@ -23,9 +23,7 @@ const FixedArena = memory.FixedArena;
 const RoundArena = memory.RoundArena;
 
 const assets = @import("assets.zig");
-
-const WINDOW_WIDTH = 1280;
-const WINDOW_HEIGHT = 720;
+const Platform = @import("platform.zig");
 
 pub const log_options = log.Options{
     .level = .Info,
@@ -39,96 +37,21 @@ pub const os = if (builtin.os.tag != .emscripten) std.os else struct {
 };
 
 pub fn main() !void {
-    sdl.assert(@src(), sdl.SDL_Init(sdl.SDL_INIT_AUDIO | sdl.SDL_INIT_VIDEO));
+    Platform.init();
 
-    // for 24bit depth
-    sdl.assert(@src(), sdl.SDL_GL_SetAttribute(sdl.SDL_GL_DEPTH_SIZE, 24));
-
-    const window = sdl.SDL_CreateWindow(
-        "steel",
-        WINDOW_WIDTH,
-        WINDOW_HEIGHT,
-        sdl.SDL_WINDOW_OPENGL,
-    ) orelse {
-        log.err(@src(), "Cannot create a window: {s}", .{sdl.SDL_GetError()});
-        return error.SDLCreateWindow;
-    };
-    sdl.assert(@src(), sdl.SDL_SetWindowResizable(window, false));
-
-    const context = sdl.SDL_GL_CreateContext(window);
-    sdl.assert(@src(), sdl.SDL_GL_MakeCurrent(window, context));
-
-    log.info(@src(), "Vendor graphic card: {s}", .{gl.glGetString(gl.GL_VENDOR)});
-    log.info(@src(), "Renderer: {s}", .{gl.glGetString(gl.GL_RENDERER)});
-    log.info(@src(), "Version GL: {s}", .{gl.glGetString(gl.GL_VERSION)});
-    log.info(@src(), "Version GLSL: {s}", .{gl.glGetString(gl.GL_SHADING_LANGUAGE_VERSION)});
-
-    sdl.assert(@src(), sdl.SDL_ShowWindow(window));
-
-    _ = cimgui.igCreateContext(null);
-    _ = cimgui.ImGui_ImplSDL3_InitForOpenGL(@ptrCast(window), context);
-    const cimgli_opengl_version = if (builtin.target.os.tag == .emscripten)
-        "#version 100"
-    else
-        "#version 450";
-    _ = cimgui.ImGui_ImplOpenGL3_Init(cimgli_opengl_version);
-    const imgui_io = &cimgui.igGetIO_Nil()[0];
-
-    gl.glViewport(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
-
-    if (builtin.target.os.tag != .emscripten)
-        gl.glClipControl(gl.GL_LOWER_LEFT, gl.GL_ZERO_TO_ONE);
-
-    gl.glEnable(gl.GL_DEPTH_TEST);
-    gl.glEnable(gl.GL_BLEND);
-    gl.glEnable(gl.GL_CULL_FACE);
-    gl.glDepthFunc(gl.GL_GEQUAL);
-    gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA);
-
-    var gpa = DebugAllocator{};
-    const gpa_alloc = gpa.allocator();
-
-    var frame_allocator = FixedArena.init(try gpa_alloc.alloc(u8, 4096));
-    const frame_alloc = frame_allocator.allocator();
-
-    var scratch_allocator = RoundArena.init(try gpa_alloc.alloc(u8, 4096));
-    const scratch_alloc = scratch_allocator.allocator();
-
-    var app = App.init(gpa_alloc, frame_alloc, scratch_alloc);
-    var stop: bool = false;
-
-    var app_events: [events.MAX_EVENTS]events.Event = undefined;
-    var sdl_events: [events.MAX_EVENTS]sdl.SDL_Event = undefined;
+    var app: App = .{};
+    try app.init();
 
     var t = std.time.nanoTimestamp();
-    while (!stop) {
-        frame_allocator.reset();
-
+    while (!Platform.stop) {
         const new_t = std.time.nanoTimestamp();
         const dt = @as(f32, @floatFromInt(new_t - t)) / std.time.ns_per_s;
         t = new_t;
 
-        const new_sdl_events = events.get_sdl_events(&sdl_events);
-        for (new_sdl_events) |*sdl_event| {
-            _ = cimgui.ImGui_ImplSDL3_ProcessEvent(@ptrCast(sdl_event));
-            switch (sdl_event.type) {
-                sdl.SDL_EVENT_QUIT => {
-                    stop = true;
-                },
-                else => {},
-            }
-        }
-        const mouse_pos = events.get_mouse_pos();
-        const imgui_handling_event = imgui_io.WantCaptureMouse or
-            imgui_io.WantCaptureKeyboard or
-            imgui_io.WantTextInput;
-        const new_events = if (imgui_handling_event)
-            &.{}
-        else
-            events.parse_sdl_events(new_sdl_events, &app_events);
-        try app.update(new_events, imgui_handling_event, mouse_pos, dt);
+        Platform.process_events();
+        try app.update(dt);
 
-        sdl.assert(@src(), sdl.SDL_GL_SwapWindow(window));
+        Platform.present();
     }
 }
 
@@ -246,7 +169,8 @@ pub const Camera = struct {
     pub fn perspective(self: *const Self) math.Mat4 {
         var m = math.Mat4.perspective(
             self.fovy,
-            @as(f32, @floatFromInt(WINDOW_WIDTH)) / @as(f32, @floatFromInt(WINDOW_HEIGHT)),
+            @as(f32, @floatFromInt(Platform.WINDOW_WIDTH)) /
+                @as(f32, @floatFromInt(Platform.WINDOW_HEIGHT)),
             self.near,
             self.far,
         );
@@ -256,8 +180,8 @@ pub const Camera = struct {
     }
 
     pub fn orthogonal(self: *const Self) math.Mat4 {
-        const width: f32 = @as(f32, WINDOW_WIDTH) / self.zoom;
-        const height: f32 = @as(f32, WINDOW_HEIGHT) / self.zoom;
+        const width: f32 = @as(f32, Platform.WINDOW_WIDTH) / self.zoom;
+        const height: f32 = @as(f32, Platform.WINDOW_HEIGHT) / self.zoom;
         var m = math.Mat4.orthogonal(
             width,
             height,
@@ -383,7 +307,7 @@ pub const Grid = struct {
             return std.math.order(a.p, b.p);
         }
     };
-    pub fn find_path(self: *Self, allocator: Allocator) !?[]XY {
+    pub fn find_path(self: *Self, allocator: Allocator) ?[]XY {
         if (!self.has_throne or !self.has_spawn)
             return null;
 
@@ -397,7 +321,7 @@ pub const Grid = struct {
         var f_score: [Self.WIDTH][Self.HEIGHT]u16 =
             .{.{std.math.maxInt(u16)} ** Self.HEIGHT} ** Self.WIDTH;
 
-        try to_explore.add(.{ .xy = self.spawn_xy, .p = 0 });
+        to_explore.add(.{ .xy = self.spawn_xy, .p = 0 }) catch return null;
         g_score[self.spawn_xy.x][self.spawn_xy.y] = 0;
         f_score[self.spawn_xy.x][self.spawn_xy.y] = self.distance_to_throne(self.spawn_xy);
 
@@ -409,7 +333,7 @@ pub const Grid = struct {
                 var c = current.xy;
                 while (c != self.spawn_xy) : (i += 1) {
                     c = came_from[c.x][c.y];
-                    try path.append(allocator, c);
+                    path.append(allocator, c) catch return null;
 
                     log.assert(
                         @src(),
@@ -418,7 +342,7 @@ pub const Grid = struct {
                         .{},
                     );
                 }
-                return try path.toOwnedSlice(allocator);
+                return path.toOwnedSlice(allocator) catch return null;
             }
 
             const left: ?XY =
@@ -479,7 +403,7 @@ pub const Grid = struct {
                         }
                     }
                     if (!found)
-                        try to_explore.add(.{ .xy = nn, .p = new_f_score });
+                        to_explore.add(.{ .xy = nn, .p = new_f_score }) catch return null;
                 }
             }
         }
@@ -559,40 +483,43 @@ pub const Grid = struct {
 };
 
 pub const App = struct {
-    gpa_alloc: Allocator,
-    frame_alloc: Allocator,
-    scratch_alloc: Allocator,
+    gpa_allocator: DebugAllocator = .{},
+    frame_allocator: FixedArena = .{},
+    scratch_allocator: RoundArena = .{},
 
-    mesh_shader: MeshShader,
-    materials: assets.Materials,
-    cube: GpuMesh,
-    gpu_meshes: assets.GpuMeshes,
-    debug_grid_shader: DebugGridShader,
-    debug_grid: DebugGrid,
+    mesh_shader: MeshShader = undefined,
+    materials: assets.Materials = undefined,
+    cube: GpuMesh = undefined,
+    gpu_meshes: assets.GpuMeshes = undefined,
+    debug_grid_shader: DebugGridShader = undefined,
+    debug_grid: DebugGrid = undefined,
     debug_grid_scale: f32 = 10.0,
 
-    floating_camera: Camera,
-    topdown_camera: Camera,
+    floating_camera: Camera = .{},
+    topdown_camera: Camera = .{},
     use_topdown_camera: bool = false,
 
     level_path: [256]u8 = .{0} ** 256,
     show_grid: bool = true,
-    grid: Grid,
+    grid: Grid = .{},
     current_cell_type: assets.ModelType = .Floor,
     current_path: []XY = &.{},
 
     const Self = @This();
 
-    pub fn init(
-        gpa_alloc: Allocator,
-        frame_alloc: Allocator,
-        scratch_alloc: Allocator,
-    ) Self {
+    pub fn init(self: *Self) !void {
+        var gpa = DebugAllocator{};
+        const gpa_alloc = gpa.allocator();
+
+        const frame_allocator = FixedArena.init(try gpa_alloc.alloc(u8, 4096));
+        const scratch_allocator = RoundArena.init(try gpa_alloc.alloc(u8, 4096));
+
+        self.gpa_allocator = gpa;
+        self.frame_allocator = frame_allocator;
+        self.scratch_allocator = scratch_allocator;
+
         const mesh_shader = MeshShader.init();
         const debug_grid_shader = DebugGridShader.init();
-
-        const meshes_mem = gpa_alloc.alloc(u8, 4096 * 4) catch unreachable;
-        defer gpa_alloc.free(meshes_mem);
 
         const mem = memory.FileMem.init(assets.DEFAULT_PACKED_ASSETS_PATH) catch unreachable;
         defer mem.deinit();
@@ -612,39 +539,38 @@ pub const App = struct {
 
         const grid: Grid = .{};
 
-        var self = Self{
-            .gpa_alloc = gpa_alloc,
-            .frame_alloc = frame_alloc,
-            .scratch_alloc = scratch_alloc,
-            .mesh_shader = mesh_shader,
-            .materials = unpack_result.materials,
-            .cube = cube,
-            .gpu_meshes = gpu_meshes,
-            .debug_grid_shader = debug_grid_shader,
-            .debug_grid = debug_grid,
-            .floating_camera = floating_camera,
-            .topdown_camera = topdown_camera,
-            .grid = grid,
-        };
+        self.mesh_shader = mesh_shader;
+        self.materials = unpack_result.materials;
+        self.cube = cube;
+        self.gpu_meshes = gpu_meshes;
+        self.debug_grid_shader = debug_grid_shader;
+        self.debug_grid = debug_grid;
+        self.floating_camera = floating_camera;
+        self.topdown_camera = topdown_camera;
+        self.grid = grid;
+
         const default_path = "resources/level.json";
         @memcpy(self.level_path[0..default_path.len], default_path);
-        return self;
     }
 
     pub fn update(
         self: *Self,
-        new_events: []const events.Event,
-        imgui_handling_event: bool,
-        mouse_pos: events.MousePosition,
         dt: f32,
     ) !void {
+        self.frame_allocator.reset();
+
+        const imgui_wants_to_handle_events = Platform.imgui_wants_to_handle_events();
+        var new_events = Platform.input_events;
+
         const camera = if (self.use_topdown_camera)
             &self.topdown_camera
         else
             &self.floating_camera;
 
-        if (imgui_handling_event)
+        if (imgui_wants_to_handle_events) {
+            new_events = &.{};
             camera.velocity = .{};
+        }
 
         var lmb_pressed: bool = false;
         var rmb_pressed: bool = false;
@@ -670,8 +596,10 @@ pub const App = struct {
         camera.move(dt);
 
         const mouse_clip = math.Vec3{
-            .x = (@as(f32, @floatFromInt(mouse_pos.x)) / WINDOW_WIDTH * 2.0) - 1.0,
-            .y = -((@as(f32, @floatFromInt(mouse_pos.y)) / WINDOW_HEIGHT * 2.0) - 1.0),
+            .x = (@as(f32, @floatFromInt(Platform.mouse_position.x)) /
+                Platform.WINDOW_WIDTH * 2.0) - 1.0,
+            .y = -((@as(f32, @floatFromInt(Platform.mouse_position.y)) /
+                Platform.WINDOW_HEIGHT * 2.0) - 1.0),
             .z = 1.0,
         };
         const mouse_xy = camera.mouse_to_xy(mouse_clip);
@@ -693,123 +621,7 @@ pub const App = struct {
                 @intFromFloat(@floor(mouse_xy.y)),
             );
 
-        {
-            var open: bool = true;
-
-            cimgui.ImGui_ImplOpenGL3_NewFrame();
-            cimgui.ImGui_ImplSDL3_NewFrame();
-            cimgui.igNewFrame();
-            defer cimgui.igRender();
-
-            _ = cimgui.igBegin("options", &open, 0);
-            defer cimgui.igEnd();
-
-            var cimgui_id: i32 = 0;
-
-            if (cimgui.igCollapsingHeader_BoolPtr("Mouse info", &open, 0)) {
-                _ = cimgui.igSeparatorText("Mouse");
-                _ = cimgui.igValue_Uint("x", mouse_pos.x);
-                _ = cimgui.igValue_Uint("y", mouse_pos.y);
-                _ = cimgui.igSeparatorText("Mouse XY");
-                _ = cimgui.igValue_Float("x", mouse_xy.x, null);
-                _ = cimgui.igValue_Float("y", mouse_xy.y, null);
-                _ = cimgui.igSeparatorText("Mouse Grid XY");
-                _ = cimgui.igValue_Float("x", grid_xy.x, null);
-                _ = cimgui.igValue_Float("y", grid_xy.y, null);
-            }
-
-            if (cimgui.igCollapsingHeader_BoolPtr("Camera", &open, 0)) {
-                _ = cimgui.igSeparatorText("Camera");
-                _ = cimgui.igCheckbox("Use top down camera", &self.use_topdown_camera);
-                _ = cimgui.igSeparatorText(
-                    if (!self.use_topdown_camera) "Floating camera +" else "Floating camera",
-                );
-                {
-                    cimgui.igPushID_Int(cimgui_id);
-                    cimgui_id += 1;
-                    defer cimgui.igPopID();
-                    self.floating_camera.imgui_options();
-                }
-                _ = cimgui.igSeparatorText(
-                    if (self.use_topdown_camera) "Topdown camera +" else "Topdown camera",
-                );
-                {
-                    cimgui.igPushID_Int(cimgui_id);
-                    cimgui_id += 1;
-                    defer cimgui.igPopID();
-                    self.topdown_camera.imgui_options();
-                }
-            }
-
-            if (cimgui.igCollapsingHeader_BoolPtr("Debug grid", &open, 0)) {
-                _ = cimgui.igCheckbox("Enabled", &self.show_grid);
-                _ = cimgui.igDragFloat("scale", &self.debug_grid_scale, 0.1, 1.0, 100.0, null, 0);
-            }
-
-            if (cimgui.igCollapsingHeader_BoolPtr("Materials", &open, 0)) {
-                var iter = self.materials.iterator();
-                while (iter.next()) |m| {
-                    cimgui.igPushID_Int(cimgui_id);
-                    cimgui_id += 1;
-                    defer cimgui.igPopID();
-
-                    _ = cimgui.igColorEdit4("albedo", @ptrCast(&m.value.albedo), 0);
-                    _ = cimgui.igSliderFloat("metallic", &m.value.metallic, 0.0, 1.0, null, 0);
-                    _ = cimgui.igSliderFloat("roughness", &m.value.roughness, 0.0, 1.0, null, 0);
-                }
-            }
-
-            if (cimgui.igCollapsingHeader_BoolPtr(
-                "Level",
-                &open,
-                cimgui.ImGuiTreeNodeFlags_DefaultOpen,
-            )) {
-                _ = cimgui.igSeparatorText("Cell type");
-                if (cimgui.igSelectable_Bool("Floor", self.current_cell_type == .Floor, 0, .{}))
-                    self.current_cell_type = .Floor;
-                if (cimgui.igSelectable_Bool("Wall", self.current_cell_type == .Wall, 0, .{}))
-                    self.current_cell_type = .Wall;
-                if (cimgui.igSelectable_Bool("Spawn", self.current_cell_type == .Spawn, 0, .{}))
-                    self.current_cell_type = .Spawn;
-                if (cimgui.igSelectable_Bool("Throne", self.current_cell_type == .Throne, 0, .{}))
-                    self.current_cell_type = .Throne;
-
-                _ = cimgui.igSeparatorText("Spawn XY");
-                _ = cimgui.igValue_Uint("x", self.grid.spawn_xy.x);
-                _ = cimgui.igValue_Uint("y", self.grid.spawn_xy.y);
-
-                _ = cimgui.igSeparatorText("Throne XY");
-                _ = cimgui.igValue_Uint("x", self.grid.throne_xy.x);
-                _ = cimgui.igValue_Uint("y", self.grid.throne_xy.y);
-
-                if (cimgui.igButton("Find path", .{})) {
-                    if (try self.grid.find_path(self.scratch_alloc)) |new_path| {
-                        self.gpa_alloc.free(self.current_path);
-                        self.current_path = try self.gpa_alloc.alloc(XY, new_path.len);
-                        @memcpy(self.current_path, new_path);
-                    }
-                }
-
-                _ = cimgui.igSeparatorText("Level Save/Load");
-                _ = cimgui.igInputText(
-                    "File path",
-                    &self.level_path,
-                    self.level_path.len,
-                    0,
-                    null,
-                    null,
-                );
-                const path = std.mem.sliceTo(&self.level_path, 0);
-                if (cimgui.igButton("Save level", .{})) {
-                    self.grid.save(self.scratch_alloc, path) catch
-                        log.err(@src(), "Cannot save level to {s}", .{path});
-                }
-                if (cimgui.igButton("Load level", .{})) {
-                    self.grid.load(self.scratch_alloc, path) catch
-                        log.err(@src(), "Cannot load level from {s}", .{path});
-                }
-            }
-        }
+        self.draw_imgui();
 
         gl.glClearDepth(0.0);
         gl.glClearColor(0.0, 0.0, 0.0, 1.0);
@@ -896,15 +708,117 @@ pub const App = struct {
         cimgui.ImGui_ImplOpenGL3_RenderDrawData(imgui_data);
     }
 
-    pub fn add_cube(self: *Self, cube: Self.Tile) !void {
-        for (self.level_tiles.items) |c|
-            if (c.position.eq(cube.position)) return;
-        try self.level_tiles.append(self.allocator, cube);
-    }
+    pub fn draw_imgui(self: *Self) void {
+        var open: bool = true;
+        const scratch_alloc = self.scratch_allocator.allocator();
+        const gpa_alloc = self.gpa_allocator.allocator();
 
-    pub fn remove_cube(self: *Self, position: math.Vec2) !void {
-        for (self.level_tiles.items, 0..) |c, i| {
-            if (c.position.eq(position)) _ = self.level_tiles.swapRemove(i);
+        cimgui.ImGui_ImplOpenGL3_NewFrame();
+        cimgui.ImGui_ImplSDL3_NewFrame();
+        cimgui.igNewFrame();
+        defer cimgui.igRender();
+
+        _ = cimgui.igBegin("options", &open, 0);
+        defer cimgui.igEnd();
+
+        var cimgui_id: i32 = 0;
+
+        if (cimgui.igCollapsingHeader_BoolPtr("Mouse info", &open, 0)) {
+            _ = cimgui.igSeparatorText("Mouse");
+            _ = cimgui.igValue_Uint("x", Platform.mouse_position.x);
+            _ = cimgui.igValue_Uint("y", Platform.mouse_position.y);
+        }
+
+        if (cimgui.igCollapsingHeader_BoolPtr("Camera", &open, 0)) {
+            _ = cimgui.igSeparatorText("Camera");
+            _ = cimgui.igCheckbox("Use top down camera", &self.use_topdown_camera);
+            _ = cimgui.igSeparatorText(
+                if (!self.use_topdown_camera) "Floating camera +" else "Floating camera",
+            );
+            {
+                cimgui.igPushID_Int(cimgui_id);
+                cimgui_id += 1;
+                defer cimgui.igPopID();
+                self.floating_camera.imgui_options();
+            }
+            _ = cimgui.igSeparatorText(
+                if (self.use_topdown_camera) "Topdown camera +" else "Topdown camera",
+            );
+            {
+                cimgui.igPushID_Int(cimgui_id);
+                cimgui_id += 1;
+                defer cimgui.igPopID();
+                self.topdown_camera.imgui_options();
+            }
+        }
+
+        if (cimgui.igCollapsingHeader_BoolPtr("Debug grid", &open, 0)) {
+            _ = cimgui.igCheckbox("Enabled", &self.show_grid);
+            _ = cimgui.igDragFloat("scale", &self.debug_grid_scale, 0.1, 1.0, 100.0, null, 0);
+        }
+
+        if (cimgui.igCollapsingHeader_BoolPtr("Materials", &open, 0)) {
+            var iter = self.materials.iterator();
+            while (iter.next()) |m| {
+                cimgui.igPushID_Int(cimgui_id);
+                cimgui_id += 1;
+                defer cimgui.igPopID();
+
+                _ = cimgui.igColorEdit4("albedo", @ptrCast(&m.value.albedo), 0);
+                _ = cimgui.igSliderFloat("metallic", &m.value.metallic, 0.0, 1.0, null, 0);
+                _ = cimgui.igSliderFloat("roughness", &m.value.roughness, 0.0, 1.0, null, 0);
+            }
+        }
+
+        if (cimgui.igCollapsingHeader_BoolPtr(
+            "Level",
+            &open,
+            cimgui.ImGuiTreeNodeFlags_DefaultOpen,
+        )) {
+            _ = cimgui.igSeparatorText("Cell type");
+            if (cimgui.igSelectable_Bool("Floor", self.current_cell_type == .Floor, 0, .{}))
+                self.current_cell_type = .Floor;
+            if (cimgui.igSelectable_Bool("Wall", self.current_cell_type == .Wall, 0, .{}))
+                self.current_cell_type = .Wall;
+            if (cimgui.igSelectable_Bool("Spawn", self.current_cell_type == .Spawn, 0, .{}))
+                self.current_cell_type = .Spawn;
+            if (cimgui.igSelectable_Bool("Throne", self.current_cell_type == .Throne, 0, .{}))
+                self.current_cell_type = .Throne;
+
+            _ = cimgui.igSeparatorText("Spawn XY");
+            _ = cimgui.igValue_Uint("x", self.grid.spawn_xy.x);
+            _ = cimgui.igValue_Uint("y", self.grid.spawn_xy.y);
+
+            _ = cimgui.igSeparatorText("Throne XY");
+            _ = cimgui.igValue_Uint("x", self.grid.throne_xy.x);
+            _ = cimgui.igValue_Uint("y", self.grid.throne_xy.y);
+
+            if (cimgui.igButton("Find path", .{})) {
+                if (self.grid.find_path(scratch_alloc)) |new_path| {
+                    gpa_alloc.free(self.current_path);
+                    self.current_path = gpa_alloc.alloc(XY, new_path.len) catch unreachable;
+                    @memcpy(self.current_path, new_path);
+                }
+            }
+
+            _ = cimgui.igSeparatorText("Level Save/Load");
+            _ = cimgui.igInputText(
+                "File path",
+                &self.level_path,
+                self.level_path.len,
+                0,
+                null,
+                null,
+            );
+            const path = std.mem.sliceTo(&self.level_path, 0);
+            if (cimgui.igButton("Save level", .{})) {
+                self.grid.save(scratch_alloc, path) catch
+                    log.err(@src(), "Cannot save level to {s}", .{path});
+            }
+            if (cimgui.igButton("Load level", .{})) {
+                self.grid.load(scratch_alloc, path) catch
+                    log.err(@src(), "Cannot load level from {s}", .{path});
+            }
         }
     }
 };

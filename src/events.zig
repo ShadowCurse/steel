@@ -5,8 +5,8 @@ const sdl = @import("bindings/sdl.zig");
 pub const MAX_EVENTS = 8;
 
 pub const MousePosition = struct {
-    x: u32,
-    y: u32,
+    x: u32 = 0,
+    y: u32 = 0,
 };
 pub fn get_mouse_pos() MousePosition {
     var x: f32 = undefined;
