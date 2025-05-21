@@ -1,6 +1,9 @@
 const std = @import("std");
 const log = @import("log.zig");
 
+pub fn vec2(x: f32, y: f32) Vec2 {
+    return .{ .x = x, .y = y };
+}
 pub const Vec2 = extern struct {
     x: f32 = 0.0,
     y: f32 = 0.0,
@@ -117,6 +120,9 @@ pub const Vec2 = extern struct {
     }
 };
 
+pub fn vec3(x: f32, y: f32, z: f32) Vec3 {
+    return .{ .x = x, .y = y, .z = z };
+}
 pub const Vec3 = extern struct {
     x: f32 = 0.0,
     y: f32 = 0.0,
@@ -213,6 +219,9 @@ pub const Vec3 = extern struct {
     }
 };
 
+pub fn vec4(x: f32, y: f32, z: f32, w: f32) Vec4 {
+    return .{ .x = x, .y = y, .z = z, .w = w };
+}
 pub const Vec4 = extern struct {
     x: f32 = 0.0,
     y: f32 = 0.0,
