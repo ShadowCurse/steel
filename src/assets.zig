@@ -11,6 +11,9 @@ const Vec4 = math.Vec4;
 const Vec3 = math.Vec3;
 const Vec2 = math.Vec2;
 
+const rendering = @import("rendering.zig");
+const GpuMesh = rendering.GpuMesh;
+
 pub const DEFAULT_MESHES_DIR_PATH = "resources/models";
 pub const DEFAULT_PACKED_ASSETS_PATH = "resources/packed.p";
 
@@ -33,6 +36,15 @@ pub const DEFAULT_PACKED_ASSETS_PATH = "resources/packed.p";
 
 pub const Meshes = std.EnumArray(ModelType, Mesh);
 pub const Materials = std.EnumArray(ModelType, Material);
+pub const GpuMeshes = std.EnumArray(ModelType, GpuMesh);
+
+pub fn gpu_meshes_from_meshes(meshes: *const Meshes) GpuMeshes {
+    var gpu_meshes: GpuMeshes = undefined;
+    for (std.enums.values(ModelType)) |v| {
+        gpu_meshes.getPtr(v).* = GpuMesh.from_mesh(meshes.getPtrConst(v));
+    }
+    return gpu_meshes;
+}
 
 pub const ModelType = enum {
     Floor,

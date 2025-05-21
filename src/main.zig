@@ -566,10 +566,7 @@ pub const App = struct {
     mesh_shader: MeshShader,
     materials: assets.Materials,
     cube: GpuMesh,
-    floor: GpuMesh,
-    wall: GpuMesh,
-    spawn: GpuMesh,
-    throne: GpuMesh,
+    gpu_meshes: assets.GpuMeshes,
     debug_grid_shader: DebugGridShader,
     debug_grid: DebugGrid,
     debug_grid_scale: f32 = 10.0,
@@ -602,10 +599,7 @@ pub const App = struct {
         const unpack_result = assets.unpack(mem.mem) catch unreachable;
 
         const cube = GpuMesh.init(Mesh.Vertex, Mesh.Cube.vertices, Mesh.Cube.indices);
-        const spawn = GpuMesh.from_mesh(unpack_result.meshes.getPtrConst(.Spawn));
-        const wall = GpuMesh.from_mesh(unpack_result.meshes.getPtrConst(.Wall));
-        const floor = GpuMesh.from_mesh(unpack_result.meshes.getPtrConst(.Floor));
-        const throne = GpuMesh.from_mesh(unpack_result.meshes.getPtrConst(.Throne));
+        const gpu_meshes = assets.gpu_meshes_from_meshes(&unpack_result.meshes);
 
         const debug_grid = DebugGrid.init();
 
@@ -625,10 +619,7 @@ pub const App = struct {
             .mesh_shader = mesh_shader,
             .materials = unpack_result.materials,
             .cube = cube,
-            .floor = floor,
-            .wall = wall,
-            .spawn = spawn,
-            .throne = throne,
+            .gpu_meshes = gpu_meshes,
             .debug_grid_shader = debug_grid_shader,
             .debug_grid = debug_grid,
             .floating_camera = floating_camera,
@@ -847,12 +838,7 @@ pub const App = struct {
                         m.roughness,
                         1.0,
                     );
-                    switch (cell_type) {
-                        .Floor => self.floor.draw(),
-                        .Wall => self.wall.draw(),
-                        .Spawn => self.spawn.draw(),
-                        .Throne => self.throne.draw(),
-                    }
+                    self.gpu_meshes.getPtr(cell_type).draw();
                 }
             }
         }
@@ -891,12 +877,7 @@ pub const App = struct {
                 m.roughness,
                 1.0,
             );
-            switch (self.current_cell_type) {
-                .Floor => self.floor.draw(),
-                .Wall => self.wall.draw(),
-                .Spawn => self.spawn.draw(),
-                .Throne => self.throne.draw(),
-            }
+            self.gpu_meshes.getPtr(self.current_cell_type).draw();
         }
 
         if (self.show_grid) {
