@@ -525,6 +525,7 @@ pub const App = struct {
     lmb_pressed: bool = false,
     rmb_pressed: bool = false,
 
+    input_mode: InputMode = .Selection,
     level_path: [256]u8 = .{0} ** 256,
     show_grid: bool = true,
     grid: Grid = .{},
@@ -535,6 +536,11 @@ pub const App = struct {
     selected_cell_xy: ?XY = null,
 
     const HILIGHT_COLOR: math.Vec4 = .{ .y = 1.0, .z = 1.0 };
+
+    const InputMode = enum {
+        Selection,
+        Placement,
+    };
 
     const Self = @This();
 
@@ -638,17 +644,19 @@ pub const App = struct {
         const mouse_ray = camera.mouse_to_ray(mouse_clip);
         self.find_closest_mouse_t(&mouse_ray);
 
-        if (self.lmb_pressed)
-            self.grid.set(
-                @intFromFloat(@floor(mouse_xy.x)),
-                @intFromFloat(@floor(mouse_xy.y)),
-                self.current_cell_type,
-            );
-        if (self.rmb_pressed)
-            self.grid.unset(
-                @intFromFloat(@floor(mouse_xy.x)),
-                @intFromFloat(@floor(mouse_xy.y)),
-            );
+        if (self.input_mode == .Placement) {
+            if (self.lmb_pressed)
+                self.grid.set(
+                    @intFromFloat(@floor(mouse_xy.x)),
+                    @intFromFloat(@floor(mouse_xy.y)),
+                    self.current_cell_type,
+                );
+            if (self.rmb_pressed)
+                self.grid.unset(
+                    @intFromFloat(@floor(mouse_xy.x)),
+                    @intFromFloat(@floor(mouse_xy.y)),
+                );
+        }
 
         self.draw_imgui();
 
@@ -711,23 +719,25 @@ pub const App = struct {
             self.cube.draw();
         }
 
-        if (self.mouse_closest_t) |t| {
-            const p = mouse_ray.at_t(t);
-            const model = math.Mat4.IDENDITY
-                .translate(p).scale(.{ .x = 0.2, .y = 0.2, .z = 0.2 });
+        if (false) {
+            if (self.mouse_closest_t) |t| {
+                const p = mouse_ray.at_t(t);
+                const model = math.Mat4.IDENDITY
+                    .translate(p).scale(.{ .x = 0.2, .y = 0.2, .z = 0.2 });
 
-            self.mesh_shader.setup(
-                &camera.position,
-                &camera.view,
-                &camera.projection,
-                &model,
-                &.{ .x = 2.0, .y = 0.0, .z = 4.0 },
-                &.{ .x = 1.0, .y = 0.0, .z = 0.0 },
-                0.0,
-                0.0,
-                1.0,
-            );
-            self.cube.draw();
+                self.mesh_shader.setup(
+                    &camera.position,
+                    &camera.view,
+                    &camera.projection,
+                    &model,
+                    &.{ .x = 2.0, .y = 0.0, .z = 4.0 },
+                    &.{ .x = 1.0, .y = 0.0, .z = 0.0 },
+                    0.0,
+                    0.0,
+                    1.0,
+                );
+                self.cube.draw();
+            }
         }
 
         if (self.show_grid) {
@@ -750,6 +760,12 @@ pub const App = struct {
         self: *Self,
         mouse_ray: *const math.Ray,
     ) void {
+        if (self.input_mode != .Selection)
+            return;
+
+        if (!self.lmb_pressed)
+            return;
+
         self.mouse_closest_t = null;
         for (0..Grid.WIDTH) |x| {
             for (0..Grid.HEIGHT) |y| {
@@ -860,15 +876,23 @@ pub const App = struct {
             &open,
             cimgui.ImGuiTreeNodeFlags_DefaultOpen,
         )) {
-            _ = cimgui.igSeparatorText("Cell type");
-            if (cimgui.igSelectable_Bool("Floor", self.current_cell_type == .Floor, 0, .{}))
-                self.current_cell_type = .Floor;
-            if (cimgui.igSelectable_Bool("Wall", self.current_cell_type == .Wall, 0, .{}))
-                self.current_cell_type = .Wall;
-            if (cimgui.igSelectable_Bool("Spawn", self.current_cell_type == .Spawn, 0, .{}))
-                self.current_cell_type = .Spawn;
-            if (cimgui.igSelectable_Bool("Throne", self.current_cell_type == .Throne, 0, .{}))
-                self.current_cell_type = .Throne;
+            _ = cimgui.igSeparatorText("Input mode");
+            if (cimgui.igSelectable_Bool("Selection", self.input_mode == .Selection, 0, .{}))
+                self.input_mode = .Selection;
+            if (cimgui.igSelectable_Bool("Placement", self.input_mode == .Placement, 0, .{}))
+                self.input_mode = .Placement;
+
+            if (self.input_mode == .Placement) {
+                _ = cimgui.igSeparatorText("Cell type");
+                if (cimgui.igSelectable_Bool("Floor", self.current_cell_type == .Floor, 0, .{}))
+                    self.current_cell_type = .Floor;
+                if (cimgui.igSelectable_Bool("Wall", self.current_cell_type == .Wall, 0, .{}))
+                    self.current_cell_type = .Wall;
+                if (cimgui.igSelectable_Bool("Spawn", self.current_cell_type == .Spawn, 0, .{}))
+                    self.current_cell_type = .Spawn;
+                if (cimgui.igSelectable_Bool("Throne", self.current_cell_type == .Throne, 0, .{}))
+                    self.current_cell_type = .Throne;
+            }
 
             _ = cimgui.igSeparatorText("Spawn XY");
             _ = cimgui.igValue_Uint("x", self.grid.spawn_xy.x);
