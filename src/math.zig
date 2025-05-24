@@ -1,6 +1,68 @@
 const std = @import("std");
 const log = @import("log.zig");
 
+pub const Ray = struct {
+    origin: Vec3,
+    direction: Vec3,
+
+    pub fn at_t(self: *const Ray, t: f32) Vec3 {
+        return self.origin.add(self.direction.mul_f32(t));
+    }
+};
+
+pub const Triangle = struct {
+    v0: Vec3,
+    v1: Vec3,
+    v2: Vec3,
+
+    pub fn translate(self: *const Triangle, m: *const Mat4) Triangle {
+        return .{
+            .v0 = m.mul_vec4(self.v0.extend(1.0)).shrink(),
+            .v1 = m.mul_vec4(self.v1.extend(1.0)).shrink(),
+            .v2 = m.mul_vec4(self.v2.extend(1.0)).shrink(),
+        };
+    }
+};
+
+pub const TriangleIntersectionResult = struct {
+    t: f32,
+    u: f32,
+    v: f32,
+    n: Vec3,
+};
+pub fn triangle_ray_intersect(
+    ray: *const Ray,
+    triangle: *const Triangle,
+) ?TriangleIntersectionResult {
+    const e1 = triangle.v1.sub(triangle.v0);
+    const e2 = triangle.v2.sub(triangle.v0);
+    const n = e1.cross(e2);
+    const det = -ray.direction.dot(n);
+    const invdet = 1.0 / det;
+    const ao = ray.origin.sub(triangle.v0);
+    const dao = ao.cross(ray.direction);
+    const u = e2.dot(dao) * invdet;
+    const v = -e1.dot(dao) * invdet;
+    const t = ao.dot(n) * invdet;
+    if (1e-6 <= det and 0.0 <= t and 0.0 <= u and 0.0 <= v and (u + v) <= 1.0)
+        return .{
+            .t = t,
+            .u = u,
+            .v = v,
+            .n = n,
+        }
+    else
+        return null;
+}
+
+pub fn triangle_ccw(ray_direction: Vec3, triangle: *const Triangle) bool {
+    const v0_v1 = triangle.v1.sub(triangle.v0);
+    const v0_v2 = triangle.v2.sub(triangle.v0);
+    const c = v0_v2.cross(v0_v1);
+    const d = c.dot(ray_direction);
+    return 0.0 < d;
+}
+
 pub fn vec2(x: f32, y: f32) Vec2 {
     return .{ .x = x, .y = y };
 }

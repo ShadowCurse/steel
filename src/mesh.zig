@@ -1,7 +1,7 @@
 const gl = @import("bindings/gl.zig");
-const _math = @import("math.zig");
-const Vec3 = _math.Vec3;
-const Vec4 = _math.Vec4;
+const math = @import("math.zig");
+const Vec3 = math.Vec3;
+const Vec4 = math.Vec4;
 
 indices: []const Index,
 vertices: []const Vertex,
@@ -27,6 +27,30 @@ pub const Vertex = extern struct {
         gl.glEnableVertexAttribArray(2);
         gl.glEnableVertexAttribArray(3);
         gl.glEnableVertexAttribArray(4);
+    }
+};
+
+pub fn triangle_iterator(self: *const Self) TriangleIterator {
+    return .{
+        .mesh = self,
+    };
+}
+
+pub const TriangleIterator = struct {
+    index: usize = 0,
+    mesh: *const Self,
+
+    pub fn next(self: *TriangleIterator) ?math.Triangle {
+        const index = self.index;
+        if (index < self.mesh.indices.len) {
+            self.index += 3;
+            return .{
+                .v0 = self.mesh.vertices[self.mesh.indices[index]].position,
+                .v1 = self.mesh.vertices[self.mesh.indices[index + 1]].position,
+                .v2 = self.mesh.vertices[self.mesh.indices[index + 2]].position,
+            };
+        }
+        return null;
     }
 };
 

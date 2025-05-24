@@ -5,7 +5,6 @@ const sdl = @import("bindings/sdl.zig");
 const gl = @import("bindings/gl.zig");
 const cimgui = @import("bindings/cimgui.zig");
 
-const math = @import("math.zig");
 const Mesh = @import("mesh.zig");
 const events = @import("events.zig");
 
@@ -17,6 +16,8 @@ const DebugGrid = rendering.DebugGrid;
 
 const Allocator = std.mem.Allocator;
 const DebugAllocator = std.heap.DebugAllocator(.{});
+
+const math = @import("math.zig");
 
 const memory = @import("memory.zig");
 const FixedArena = memory.FixedArena;
@@ -190,6 +191,24 @@ pub const Camera = struct {
         // flip Y for opengl
         m.j.y *= -1.0;
         return m;
+    }
+
+    pub fn mouse_to_ray(self: *const Self, mouse_pos: math.Vec3) math.Ray {
+        const world_near_world = if (self.top_down) blk: {
+            break :blk self.inverse_view
+                .mul(self.inverse_projection)
+                .mul_vec4(mouse_pos.extend(1.0))
+                .shrink();
+        } else blk: {
+            const world_near =
+                self.inverse_view.mul(self.inverse_projection).mul_vec4(mouse_pos.extend(1.0));
+            break :blk world_near.shrink().div_f32(world_near.w);
+        };
+        const forward = world_near_world.sub(self.position).normalize();
+        return .{
+            .origin = self.position,
+            .direction = forward,
+        };
     }
 
     pub fn mouse_to_xy(self: *const Self, mouse_pos: math.Vec3) math.Vec3 {
@@ -487,8 +506,12 @@ pub const App = struct {
     frame_allocator: FixedArena = .{},
     scratch_allocator: RoundArena = .{},
 
-    mesh_shader: MeshShader = undefined,
+    assets_file_mem: memory.FileMem = undefined,
+
     materials: assets.Materials = undefined,
+    meshes: assets.Meshes = undefined,
+
+    mesh_shader: MeshShader = undefined,
     cube: GpuMesh = undefined,
     gpu_meshes: assets.GpuMeshes = undefined,
     debug_grid_shader: DebugGridShader = undefined,
@@ -508,6 +531,8 @@ pub const App = struct {
     current_cell_type: assets.ModelType = .Floor,
     current_path: []XY = &.{},
 
+    mouse_closest_t: ?f32 = null,
+
     const Self = @This();
 
     pub fn init(self: *Self) !void {
@@ -521,12 +546,13 @@ pub const App = struct {
         self.frame_allocator = frame_allocator;
         self.scratch_allocator = scratch_allocator;
 
+        self.assets_file_mem =
+            memory.FileMem.init(assets.DEFAULT_PACKED_ASSETS_PATH) catch unreachable;
+
         const mesh_shader = MeshShader.init();
         const debug_grid_shader = DebugGridShader.init();
 
-        const mem = memory.FileMem.init(assets.DEFAULT_PACKED_ASSETS_PATH) catch unreachable;
-        defer mem.deinit();
-        const unpack_result = assets.unpack(mem.mem) catch unreachable;
+        const unpack_result = assets.unpack(self.assets_file_mem.mem) catch unreachable;
 
         const cube = GpuMesh.init(Mesh.Vertex, Mesh.Cube.vertices, Mesh.Cube.indices);
         const gpu_meshes = assets.gpu_meshes_from_meshes(&unpack_result.meshes);
@@ -543,6 +569,7 @@ pub const App = struct {
         const grid: Grid = .{};
 
         self.mesh_shader = mesh_shader;
+        self.meshes = unpack_result.meshes;
         self.materials = unpack_result.materials;
         self.cube = cube;
         self.gpu_meshes = gpu_meshes;
@@ -604,6 +631,7 @@ pub const App = struct {
             .z = 1.0,
         };
         const mouse_xy = camera.mouse_to_xy(mouse_clip);
+        const mouse_ray = camera.mouse_to_ray(mouse_clip);
 
         if (self.lmb_pressed)
             self.grid.set(
@@ -623,6 +651,7 @@ pub const App = struct {
         gl.glClearColor(0.0, 0.0, 0.0, 1.0);
         gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT);
 
+        self.mouse_closest_t = null;
         for (0..Grid.WIDTH) |x| {
             for (0..Grid.HEIGHT) |y| {
                 const cell = &self.grid.cells[x][y];
@@ -647,9 +676,12 @@ pub const App = struct {
                         1.0,
                     );
                     self.gpu_meshes.getPtr(cell_type).draw();
+
+                    self.find_closest_mouse_t(cell_type, &model, &mouse_ray);
                 }
             }
         }
+
         for (self.current_path) |c| {
             const model = math.Mat4.IDENDITY
                 .translate(.{
@@ -672,6 +704,25 @@ pub const App = struct {
             self.cube.draw();
         }
 
+        if (self.mouse_closest_t) |t| {
+            const p = mouse_ray.at_t(t);
+            const model = math.Mat4.IDENDITY
+                .translate(p).scale(.{ .x = 0.2, .y = 0.2, .z = 0.2 });
+
+            self.mesh_shader.setup(
+                &camera.position,
+                &camera.view,
+                &camera.projection,
+                &model,
+                &.{ .x = 2.0, .y = 0.0, .z = 4.0 },
+                &.{ .x = 1.0, .y = 0.0, .z = 0.0 },
+                0.0,
+                0.0,
+                1.0,
+            );
+            self.cube.draw();
+        }
+
         if (self.show_grid) {
             self.debug_grid_shader.setup(
                 &camera.view,
@@ -686,6 +737,34 @@ pub const App = struct {
 
         const imgui_data = cimgui.igGetDrawData();
         cimgui.ImGui_ImplOpenGL3_RenderDrawData(imgui_data);
+    }
+
+    pub fn find_closest_mouse_t(
+        self: *Self,
+        cell_type: assets.ModelType,
+        transform: *const math.Mat4,
+        mouse_ray: *const math.Ray,
+    ) void {
+        const mesh = self.meshes.getPtr(cell_type);
+        var ti = mesh.triangle_iterator();
+        while (ti.next()) |t| {
+            const tt = t.translate(transform);
+
+            const is_ccw = math.triangle_ccw(mouse_ray.direction, &tt);
+            if (!is_ccw)
+                continue;
+
+            if (math.triangle_ray_intersect(
+                mouse_ray,
+                &tt,
+            )) |i| {
+                if (self.mouse_closest_t) |*cpt|
+                    cpt.* = @min(cpt.*, i.t)
+                else
+                    self.mouse_closest_t = i.t;
+                break;
+            }
+        }
     }
 
     pub fn draw_imgui(self: *Self) void {
