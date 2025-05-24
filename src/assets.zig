@@ -51,6 +51,7 @@ pub const ModelType = enum {
     Wall,
     Spawn,
     Throne,
+    Enemy,
 };
 
 pub const Material = struct {

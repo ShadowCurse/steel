@@ -318,6 +318,14 @@ pub const Grid = struct {
         return dx + dy;
     }
 
+    pub fn xy_to_vec3(xy: XY) math.Vec3 {
+        return .{
+            .x = @as(f32, @floatFromInt(xy.x)) + 0.5 - Grid.RIGHT,
+            .y = @as(f32, @floatFromInt(xy.y)) + 0.5 - Grid.TOP,
+            .z = 0.0,
+        };
+    }
+
     const Item = packed struct(u32) {
         xy: XY,
         p: u16,
@@ -361,7 +369,11 @@ pub const Grid = struct {
                         .{},
                     );
                 }
-                return path.toOwnedSlice(allocator) catch return null;
+                const slice = path.toOwnedSlice(allocator) catch return null;
+                // The path originally is from Throne to the Spawner, need to
+                // reverse.
+                std.mem.reverse(XY, slice);
+                return slice;
             }
 
             const left: ?XY =
@@ -530,7 +542,10 @@ pub const App = struct {
     show_grid: bool = true,
     grid: Grid = .{},
     current_cell_type: assets.ModelType = .Floor,
+
     current_path: []XY = &.{},
+    path_node_index: u32 = 0,
+    path_node_progress: f32 = 0.0,
 
     mouse_closest_t: ?f32 = null,
     selected_cell_xy: ?XY = null,
@@ -669,12 +684,8 @@ pub const App = struct {
             for (0..Grid.HEIGHT) |y| {
                 const cell = &self.grid.cells[x][y];
                 if (cell.type) |cell_type| {
-                    const model = math.Mat4.IDENDITY
-                        .translate(.{
-                        .x = @as(f32, @floatFromInt(x)) + 0.5 - Grid.RIGHT,
-                        .y = @as(f32, @floatFromInt(y)) + 0.5 - Grid.TOP,
-                        .z = 0.0,
-                    });
+                    const p = Grid.xy_to_vec3(.{ .x = @intCast(x), .y = @intCast(y) });
+                    const model = math.Mat4.IDENDITY.translate(p);
 
                     const m = self.materials.getPtr(cell_type);
                     var albedo = m.albedo;
@@ -701,26 +712,61 @@ pub const App = struct {
             }
         }
 
-        for (self.current_path) |c| {
-            const model = math.Mat4.IDENDITY
-                .translate(.{
-                    .x = @as(f32, @floatFromInt(c.x)) + 0.5 - Grid.RIGHT,
-                    .y = @as(f32, @floatFromInt(c.y)) + 0.5 - Grid.TOP,
-                    .z = 0.0,
-                }).scale(.{ .x = 0.5, .y = 0.5, .z = 1.5 });
+        if (self.current_path.len != 0) {
+            const current_node = self.current_path[self.path_node_index];
+            const next_node = self.current_path[self.path_node_index + 1];
+
+            const current_node_position = Grid.xy_to_vec3(current_node);
+            const next_node_position = Grid.xy_to_vec3(next_node);
+
+            const p = current_node_position.lerp(next_node_position, self.path_node_progress);
+
+            const transform = math.Mat4.IDENDITY.translate(p);
 
             self.mesh_shader.setup(
                 &camera.position,
                 &camera.view,
                 &camera.projection,
-                &model,
+                &transform,
                 &.{ .x = 2.0, .y = 0.0, .z = 4.0 },
                 &.{ .x = 0.0, .y = 0.0, .z = 1.0 },
                 0.0,
                 0.0,
                 1.0,
             );
-            self.cube.draw();
+            self.gpu_meshes.getPtr(.Enemy).draw();
+
+            self.path_node_progress += dt;
+            if (1.0 <= self.path_node_progress) {
+                self.path_node_progress = 0.0;
+
+                if (self.path_node_index == self.current_path.len - 2) {
+                    self.path_node_index = 0;
+                } else {
+                    self.path_node_index += 1;
+                }
+            }
+        }
+
+        if (false) {
+            for (self.current_path) |c| {
+                const p = Grid.xy_to_vec3(c);
+                const model = math.Mat4.IDENDITY.translate(p)
+                    .scale(.{ .x = 0.5, .y = 0.5, .z = 1.5 });
+
+                self.mesh_shader.setup(
+                    &camera.position,
+                    &camera.view,
+                    &camera.projection,
+                    &model,
+                    &.{ .x = 2.0, .y = 0.0, .z = 4.0 },
+                    &.{ .x = 0.0, .y = 0.0, .z = 1.0 },
+                    0.0,
+                    0.0,
+                    1.0,
+                );
+                self.cube.draw();
+            }
         }
 
         if (false) {
@@ -897,6 +943,8 @@ pub const App = struct {
                     self.current_cell_type = .Spawn;
                 if (cimgui.igSelectable_Bool("Throne", self.current_cell_type == .Throne, 0, .{}))
                     self.current_cell_type = .Throne;
+                if (cimgui.igSelectable_Bool("Enemy", self.current_cell_type == .Enemy, 0, .{}))
+                    self.current_cell_type = .Enemy;
             }
 
             _ = cimgui.igSeparatorText("Spawn XY");
@@ -912,6 +960,8 @@ pub const App = struct {
                     gpa_alloc.free(self.current_path);
                     self.current_path = gpa_alloc.alloc(XY, new_path.len) catch unreachable;
                     @memcpy(self.current_path, new_path);
+                    self.path_node_index = 0;
+                    self.path_node_progress = 0.0;
                 }
             }
 
