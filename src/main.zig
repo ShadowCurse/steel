@@ -534,6 +534,7 @@ pub const App = struct {
 
     mouse_closest_t: ?f32 = null,
     selected_cell_xy: ?XY = null,
+    selected_cell_time: f32 = 0.0,
 
     const HILIGHT_COLOR: math.Vec4 = .{ .y = 1.0, .z = 1.0 };
 
@@ -678,8 +679,11 @@ pub const App = struct {
                     const m = self.materials.getPtr(cell_type);
                     var albedo = m.albedo;
                     if (self.selected_cell_xy) |xy| {
-                        if (xy.x == x and xy.y == y)
-                            albedo = Self.HILIGHT_COLOR;
+                        if (xy.x == x and xy.y == y) {
+                            self.selected_cell_time += dt;
+                            const t = @abs(@sin(self.selected_cell_time * 2.0));
+                            albedo = Self.HILIGHT_COLOR.lerp(albedo, t);
+                        }
                     }
                     self.mesh_shader.setup(
                         &camera.position,
@@ -791,6 +795,7 @@ pub const App = struct {
                             mouse_ray,
                             &tt,
                         )) |i| {
+                            self.selected_cell_time = 0.0;
                             const xy: XY = .{ .x = @intCast(x), .y = @intCast(y) };
                             if (self.mouse_closest_t) |cpt| {
                                 if (i.t < cpt) {
