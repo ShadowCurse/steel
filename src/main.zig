@@ -532,6 +532,9 @@ pub const App = struct {
     current_path: []XY = &.{},
 
     mouse_closest_t: ?f32 = null,
+    selected_cell_xy: ?XY = null,
+
+    const HILIGHT_COLOR: math.Vec4 = .{ .y = 1.0, .z = 1.0 };
 
     const Self = @This();
 
@@ -631,7 +634,9 @@ pub const App = struct {
             .z = 1.0,
         };
         const mouse_xy = camera.mouse_to_xy(mouse_clip);
+
         const mouse_ray = camera.mouse_to_ray(mouse_clip);
+        self.find_closest_mouse_t(&mouse_ray);
 
         if (self.lmb_pressed)
             self.grid.set(
@@ -651,7 +656,6 @@ pub const App = struct {
         gl.glClearColor(0.0, 0.0, 0.0, 1.0);
         gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT);
 
-        self.mouse_closest_t = null;
         for (0..Grid.WIDTH) |x| {
             for (0..Grid.HEIGHT) |y| {
                 const cell = &self.grid.cells[x][y];
@@ -664,20 +668,23 @@ pub const App = struct {
                     });
 
                     const m = self.materials.getPtr(cell_type);
+                    var albedo = m.albedo;
+                    if (self.selected_cell_xy) |xy| {
+                        if (xy.x == x and xy.y == y)
+                            albedo = Self.HILIGHT_COLOR;
+                    }
                     self.mesh_shader.setup(
                         &camera.position,
                         &camera.view,
                         &camera.projection,
                         &model,
                         &.{ .x = 2.0, .y = 0.0, .z = 4.0 },
-                        &m.albedo,
+                        &albedo,
                         m.metallic,
                         m.roughness,
                         1.0,
                     );
                     self.gpu_meshes.getPtr(cell_type).draw();
-
-                    self.find_closest_mouse_t(cell_type, &model, &mouse_ray);
                 }
             }
         }
@@ -741,28 +748,47 @@ pub const App = struct {
 
     pub fn find_closest_mouse_t(
         self: *Self,
-        cell_type: assets.ModelType,
-        transform: *const math.Mat4,
         mouse_ray: *const math.Ray,
     ) void {
-        const mesh = self.meshes.getPtr(cell_type);
-        var ti = mesh.triangle_iterator();
-        while (ti.next()) |t| {
-            const tt = t.translate(transform);
+        self.mouse_closest_t = null;
+        for (0..Grid.WIDTH) |x| {
+            for (0..Grid.HEIGHT) |y| {
+                const cell = &self.grid.cells[x][y];
+                if (cell.type) |cell_type| {
+                    const transform = math.Mat4.IDENDITY
+                        .translate(.{
+                        .x = @as(f32, @floatFromInt(x)) + 0.5 - Grid.RIGHT,
+                        .y = @as(f32, @floatFromInt(y)) + 0.5 - Grid.TOP,
+                        .z = 0.0,
+                    });
 
-            const is_ccw = math.triangle_ccw(mouse_ray.direction, &tt);
-            if (!is_ccw)
-                continue;
+                    const mesh = self.meshes.getPtr(cell_type);
+                    var ti = mesh.triangle_iterator();
+                    while (ti.next()) |t| {
+                        const tt = t.translate(&transform);
 
-            if (math.triangle_ray_intersect(
-                mouse_ray,
-                &tt,
-            )) |i| {
-                if (self.mouse_closest_t) |*cpt|
-                    cpt.* = @min(cpt.*, i.t)
-                else
-                    self.mouse_closest_t = i.t;
-                break;
+                        const is_ccw = math.triangle_ccw(mouse_ray.direction, &tt);
+                        if (!is_ccw)
+                            continue;
+
+                        if (math.triangle_ray_intersect(
+                            mouse_ray,
+                            &tt,
+                        )) |i| {
+                            const xy: XY = .{ .x = @intCast(x), .y = @intCast(y) };
+                            if (self.mouse_closest_t) |cpt| {
+                                if (i.t < cpt) {
+                                    self.mouse_closest_t = i.t;
+                                    self.selected_cell_xy = xy;
+                                }
+                            } else {
+                                self.mouse_closest_t = i.t;
+                                self.selected_cell_xy = xy;
+                            }
+                            break;
+                        }
+                    }
+                }
             }
         }
     }
