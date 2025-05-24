@@ -2,6 +2,7 @@ const gl = @import("bindings/gl.zig");
 const math = @import("math.zig");
 const Vec3 = math.Vec3;
 const Vec4 = math.Vec4;
+const Triangle = math.Triangle;
 
 indices: []const Index,
 vertices: []const Vertex,
@@ -40,7 +41,7 @@ pub const TriangleIterator = struct {
     index: usize = 0,
     mesh: *const Self,
 
-    pub fn next(self: *TriangleIterator) ?math.Triangle {
+    pub fn next(self: *TriangleIterator) ?Triangle {
         const index = self.index;
         if (index < self.mesh.indices.len) {
             self.index += 3;
