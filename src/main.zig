@@ -499,6 +499,9 @@ pub const App = struct {
     topdown_camera: Camera = .{},
     use_topdown_camera: bool = false,
 
+    lmb_pressed: bool = false,
+    rmb_pressed: bool = false,
+
     level_path: [256]u8 = .{0} ** 256,
     show_grid: bool = true,
     grid: Grid = .{},
@@ -572,8 +575,6 @@ pub const App = struct {
             camera.velocity = .{};
         }
 
-        var lmb_pressed: bool = false;
-        var rmb_pressed: bool = false;
         for (new_events) |event| {
             camera.process_input(event, dt);
 
@@ -582,8 +583,8 @@ pub const App = struct {
                     switch (mouse) {
                         .Button => |button| {
                             switch (button.key) {
-                                .LMB => lmb_pressed = button.type == .Pressed,
-                                .RMB => rmb_pressed = button.type == .Pressed,
+                                .LMB => self.lmb_pressed = button.type == .Pressed,
+                                .RMB => self.rmb_pressed = button.type == .Pressed,
                                 else => {},
                             }
                         },
@@ -603,19 +604,14 @@ pub const App = struct {
             .z = 1.0,
         };
         const mouse_xy = camera.mouse_to_xy(mouse_clip);
-        const grid_xy = math.Vec3{
-            .x = @floor(mouse_xy.x) + 0.5,
-            .y = @floor(mouse_xy.y) + 0.5,
-            .z = 0.0,
-        };
 
-        if (lmb_pressed)
+        if (self.lmb_pressed)
             self.grid.set(
                 @intFromFloat(@floor(mouse_xy.x)),
                 @intFromFloat(@floor(mouse_xy.y)),
                 self.current_cell_type,
             );
-        if (rmb_pressed)
+        if (self.rmb_pressed)
             self.grid.unset(
                 @intFromFloat(@floor(mouse_xy.x)),
                 @intFromFloat(@floor(mouse_xy.y)),
@@ -674,22 +670,6 @@ pub const App = struct {
                 1.0,
             );
             self.cube.draw();
-        }
-        {
-            const model = math.Mat4.IDENDITY.translate(grid_xy);
-            const m = self.materials.getPtr(self.current_cell_type);
-            self.mesh_shader.setup(
-                &camera.position,
-                &camera.view,
-                &camera.projection,
-                &model,
-                &.{ .x = 2.0, .y = 0.0, .z = 4.0 },
-                &m.albedo,
-                m.metallic,
-                m.roughness,
-                1.0,
-            );
-            self.gpu_meshes.getPtr(self.current_cell_type).draw();
         }
 
         if (self.show_grid) {
