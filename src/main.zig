@@ -546,6 +546,7 @@ pub const App = struct {
     current_path: []XY = &.{},
     path_node_index: u32 = 0,
     path_node_progress: f32 = 0.0,
+    enemy_position: ?math.Vec3 = null,
 
     mouse_closest_t: ?f32 = null,
     selected_cell_xy: ?XY = null,
@@ -673,6 +674,7 @@ pub const App = struct {
                     @intFromFloat(@floor(mouse_xy.y)),
                 );
         }
+        self.move_enemy_along_the_path(dt);
 
         self.draw_imgui();
 
@@ -712,17 +714,8 @@ pub const App = struct {
             }
         }
 
-        if (self.current_path.len != 0) {
-            const current_node = self.current_path[self.path_node_index];
-            const next_node = self.current_path[self.path_node_index + 1];
-
-            const current_node_position = Grid.xy_to_vec3(current_node);
-            const next_node_position = Grid.xy_to_vec3(next_node);
-
-            const p = current_node_position.lerp(next_node_position, self.path_node_progress);
-
+        if (self.enemy_position) |p| {
             const transform = math.Mat4.IDENDITY.translate(p);
-
             self.mesh_shader.setup(
                 &camera.position,
                 &camera.view,
@@ -735,17 +728,6 @@ pub const App = struct {
                 1.0,
             );
             self.gpu_meshes.getPtr(.Enemy).draw();
-
-            self.path_node_progress += dt;
-            if (1.0 <= self.path_node_progress) {
-                self.path_node_progress = 0.0;
-
-                if (self.path_node_index == self.current_path.len - 2) {
-                    self.path_node_index = 0;
-                } else {
-                    self.path_node_index += 1;
-                }
-            }
         }
 
         if (false) {
@@ -804,6 +786,32 @@ pub const App = struct {
 
         const imgui_data = cimgui.igGetDrawData();
         cimgui.ImGui_ImplOpenGL3_RenderDrawData(imgui_data);
+    }
+
+    pub fn move_enemy_along_the_path(self: *Self, dt: f32) void {
+        if (self.current_path.len == 0) {
+            self.enemy_position = null;
+            return;
+        }
+
+        const current_node = self.current_path[self.path_node_index];
+        const next_node = self.current_path[self.path_node_index + 1];
+
+        const current_node_position = Grid.xy_to_vec3(current_node);
+        const next_node_position = Grid.xy_to_vec3(next_node);
+
+        self.enemy_position =
+            current_node_position.lerp(next_node_position, self.path_node_progress);
+        self.path_node_progress += dt;
+        if (1.0 <= self.path_node_progress) {
+            self.path_node_progress = 0.0;
+
+            if (self.path_node_index == self.current_path.len - 2) {
+                self.path_node_index = 0;
+            } else {
+                self.path_node_index += 1;
+            }
+        }
     }
 
     pub fn find_closest_mouse_t(
