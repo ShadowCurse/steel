@@ -1,6 +1,8 @@
 const std = @import("std");
 const log = @import("log.zig");
 
+pub const PI = std.math.pi;
+
 pub const Ray = struct {
     origin: Vec3,
     direction: Vec3,

@@ -1,8 +1,9 @@
 const std = @import("std");
-const Allocator = std.mem.Allocator;
-const Alignment = std.mem.Alignment;
-
 const log = @import("log.zig");
+
+pub const Allocator = std.mem.Allocator;
+pub const Alignment = std.mem.Alignment;
+pub const DebugAllocator = std.heap.DebugAllocator(.{});
 
 pub const PAGE_SIZE = std.heap.page_size_min;
 pub const FileMem = struct {
