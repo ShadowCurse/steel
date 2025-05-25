@@ -24,6 +24,7 @@ const DebugAllocator = memory.DebugAllocator;
 const Mesh = @import("mesh.zig");
 const Camera = @import("camera.zig");
 const Platform = @import("platform.zig");
+const BoundedArray = std.BoundedArray;
 
 pub const log_options = log.Options{
     .level = .Info,
@@ -55,13 +56,35 @@ pub fn main() !void {
     }
 }
 
+pub const Spawn = struct {
+    xy: XY,
+    path_idx: u32,
+};
+
+pub const Throne = struct {
+    xy: XY,
+    hp: i32,
+};
+
+pub const Enemy = struct {
+    position: math.Vec3 = .{},
+    path_idx: u32 = 0,
+    path_node_idx: u32 = 0,
+    path_node_progress: f32 = 0.0,
+    hp: i32 = 10,
+    damage: i32 = 10,
+};
+
 pub const XY = packed struct(u16) { x: u8 = 0, y: u8 = 0 };
-pub const Grid = struct {
-    cells: [Self.WIDTH][Self.HEIGHT]Cell = .{.{Cell{}} ** Self.HEIGHT} ** Self.WIDTH,
-    has_throne: bool = false,
-    throne_xy: XY = .{},
-    has_spawn: bool = false,
-    spawn_xy: XY = .{},
+pub const Level = struct {
+    path: [256]u8 = .{0} ** 256,
+
+    cells: [Self.WIDTH][Self.HEIGHT]Cell = .{.{Cell{ .None = {} }} ** Self.HEIGHT} ** Self.WIDTH,
+
+    spawns: BoundedArray(Spawn, 32) = .{},
+    paths: BoundedArray([]XY, 32) = .{},
+    enemies: BoundedArray(Enemy, 32) = .{},
+    thrones: BoundedArray(Throne, 4) = .{},
 
     pub const WIDTH = 32;
     pub const HEIGHT = 32;
@@ -76,11 +99,33 @@ pub const Grid = struct {
         .w = BOT,
     };
 
-    const Cell = struct {
-        type: ?assets.ModelType = null,
+    const CellType = enum {
+        None,
+        Floor,
+        Wall,
+        Spawn,
+        Throne,
+    };
+
+    const Cell = union(CellType) {
+        None: void,
+        Floor: void,
+        Wall: void,
+        Spawn: u32,
+        Throne: u32,
     };
 
     const Self = @This();
+
+    inline fn cell_to_model_type(cell: Cell) assets.ModelType {
+        return switch (cell) {
+            .None => log.panic(@src(), "Trying to convert cell of None type to model type", .{}),
+            .Floor => |_| .Floor,
+            .Wall => |_| .Wall,
+            .Spawn => |_| .Spawn,
+            .Throne => |_| .Throne,
+        };
+    }
 
     inline fn in_range(x: i32, y: i32) ?XY {
         if (x < Self.LEFT or Self.RIGHT < x or y < Self.BOT or Self.TOP <= y)
@@ -89,54 +134,136 @@ pub const Grid = struct {
             return .{ .x = @intCast(x + RIGHT), .y = @intCast(y + TOP) };
     }
 
-    pub fn set(self: *Self, x: i32, y: i32, @"type": assets.ModelType) void {
+    pub fn set(self: *Self, x: i32, y: i32, cell_type: CellType) void {
+        switch (cell_type) {
+            .Spawn => if (self.spawns.len == self.spawns.capacity()) {
+                log.warn(
+                    @src(),
+                    "Cannot place any more spawners. MAX is {d}",
+                    .{self.spawns.capacity()},
+                );
+                return;
+            },
+            .Throne => if (self.thrones.len == self.thrones.capacity()) {
+                log.warn(
+                    @src(),
+                    "Cannot place any more thrones. MAX is {d}",
+                    .{self.thrones.capacity()},
+                );
+                return;
+            },
+            else => {},
+        }
+
         const xy = Self.in_range(x, y) orelse return;
         const cell = &self.cells[xy.x][xy.y];
 
-        if (@"type" == .Throne)
-            if (!self.has_throne) {
-                self.has_throne = true;
-                self.throne_xy = xy;
-            } else return;
-        if (cell.type == .Throne)
-            self.has_throne = false;
+        if (std.meta.activeTag(cell.*) != .None) {
+            switch (cell.*) {
+                .Spawn => |idx| {
+                    const s = self.spawns.slice();
+                    const last_spawn = &s[s.len - 1];
+                    const ls_xy = last_spawn.xy;
+                    self.cells[ls_xy.x][ls_xy.y] = .{ .Spawn = idx };
+                    _ = self.spawns.swapRemove(idx);
+                },
+                .Throne => |idx| {
+                    const s = self.thrones.slice();
+                    const last_throne = &s[s.len - 1];
+                    const ls_xy = last_throne.xy;
+                    self.cells[ls_xy.x][ls_xy.y] = .{ .Throne = idx };
+                    _ = self.thrones.swapRemove(idx);
+                },
+                .None => unreachable,
+                else => {},
+            }
+        }
 
-        if (@"type" == .Spawn)
-            if (!self.has_spawn) {
-                self.has_spawn = true;
-                self.spawn_xy = xy;
-            } else return;
-
-        if (cell.type == .Spawn)
-            self.has_spawn = false;
-
-        cell.type = @"type";
+        switch (cell_type) {
+            .None => cell.* = .{ .None = {} },
+            .Floor => cell.* = .{ .Floor = {} },
+            .Wall => cell.* = .{ .Wall = {} },
+            .Spawn => {
+                self.spawns.append(.{ .xy = xy, .path_idx = 0 }) catch unreachable;
+                cell.* = .{ .Spawn = @intCast(self.spawns.len - 1) };
+            },
+            .Throne => {
+                self.thrones.append(.{ .xy = xy, .hp = 100 }) catch unreachable;
+                cell.* = .{ .Throne = @intCast(self.thrones.len - 1) };
+            },
+        }
     }
 
     pub fn unset(self: *Self, x: i32, y: i32) void {
         const xy = Self.in_range(x, y) orelse return;
         const cell = &self.cells[xy.x][xy.y];
-        if (cell.type == .Throne)
-            self.has_throne = false;
-        if (cell.type == .Spawn)
-            self.has_spawn = false;
-        cell.type = null;
+
+        if (std.meta.activeTag(cell.*) != .None) {
+            switch (cell.*) {
+                .Spawn => |idx| {
+                    const s = self.spawns.slice();
+                    const last_spawn = &s[s.len - 1];
+                    const ls_xy = last_spawn.xy;
+                    self.cells[ls_xy.x][ls_xy.y] = .{ .Spawn = idx };
+                    _ = self.spawns.swapRemove(idx);
+                },
+                .Throne => |idx| {
+                    const s = self.thrones.slice();
+                    const last_throne = &s[s.len - 1];
+                    const ls_xy = last_throne.xy;
+                    self.cells[ls_xy.x][ls_xy.y] = .{ .Throne = idx };
+                    _ = self.thrones.swapRemove(idx);
+                },
+                .None => unreachable,
+                else => {},
+            }
+        }
+
+        cell.* = .{ .None = {} };
     }
 
-    fn distance_to_throne(self: *const Self, xy: XY) u8 {
+    fn distance_to_throne(throne_xy: XY, xy: XY) u8 {
         const dx =
-            if (self.throne_xy.x < xy.x) xy.x - self.throne_xy.x else self.throne_xy.x - xy.x;
+            if (throne_xy.x < xy.x) xy.x - throne_xy.x else throne_xy.x - xy.x;
         const dy =
-            if (self.throne_xy.y < xy.y) xy.y - self.throne_xy.y else self.throne_xy.y - xy.y;
+            if (throne_xy.y < xy.y) xy.y - throne_xy.y else throne_xy.y - xy.y;
         return dx + dy;
     }
 
     pub fn xy_to_vec3(xy: XY) math.Vec3 {
         return .{
-            .x = @as(f32, @floatFromInt(xy.x)) + 0.5 - Grid.RIGHT,
-            .y = @as(f32, @floatFromInt(xy.y)) + 0.5 - Grid.TOP,
+            .x = @as(f32, @floatFromInt(xy.x)) + 0.5 - Level.RIGHT,
+            .y = @as(f32, @floatFromInt(xy.y)) + 0.5 - Level.TOP,
             .z = 0.0,
         };
+    }
+
+    pub fn move_enemy_along_the_path(self: *Self, dt: f32) void {
+        const enemy = &self.enemies.slice()[0];
+
+        const current_path = self.paths.slice()[enemy.path_idx];
+        if (current_path.len == 0) {
+            return;
+        }
+
+        const current_node = current_path[enemy.path_node_idx];
+        const next_node = current_path[enemy.path_node_idx + 1];
+
+        const current_node_position = Self.xy_to_vec3(current_node);
+        const next_node_position = Self.xy_to_vec3(next_node);
+
+        enemy.position =
+            current_node_position.lerp(next_node_position, enemy.path_node_progress);
+        enemy.path_node_progress += dt;
+        if (1.0 <= enemy.path_node_progress) {
+            enemy.path_node_progress = 0.0;
+
+            if (enemy.path_node_idx == current_path.len - 2) {
+                enemy.path_node_idx = 0;
+            } else {
+                enemy.path_node_idx += 1;
+            }
+        }
     }
 
     const Item = packed struct(u32) {
@@ -147,11 +274,18 @@ pub const Grid = struct {
             return std.math.order(a.p, b.p);
         }
     };
-    pub fn find_path(self: *Self, allocator: Allocator) ?[]XY {
-        if (!self.has_throne or !self.has_spawn)
+    fn valid_path_cell(self: *const Self, xy: XY) bool {
+        const cell_type = std.meta.activeTag(self.cells[xy.x][xy.y]);
+        return cell_type == .Floor or cell_type == .Throne;
+    }
+    pub fn find_path(self: *Self, scratch_alloc: Allocator) ?[]XY {
+        if (self.thrones.len == 0 or self.spawns.len == 0)
             return null;
 
-        var to_explore: std.PriorityQueue(Item, void, Item.cmp) = .init(allocator, void{});
+        const spawn = &self.spawns.slice()[0];
+        const throne = &self.thrones.slice()[0];
+
+        var to_explore: std.PriorityQueue(Item, void, Item.cmp) = .init(scratch_alloc, void{});
         defer to_explore.deinit();
 
         var came_from: [Self.WIDTH][Self.HEIGHT]XY =
@@ -161,19 +295,19 @@ pub const Grid = struct {
         var f_score: [Self.WIDTH][Self.HEIGHT]u16 =
             .{.{std.math.maxInt(u16)} ** Self.HEIGHT} ** Self.WIDTH;
 
-        to_explore.add(.{ .xy = self.spawn_xy, .p = 0 }) catch return null;
-        g_score[self.spawn_xy.x][self.spawn_xy.y] = 0;
-        f_score[self.spawn_xy.x][self.spawn_xy.y] = self.distance_to_throne(self.spawn_xy);
+        to_explore.add(.{ .xy = spawn.xy, .p = 0 }) catch return null;
+        g_score[spawn.xy.x][spawn.xy.y] = 0;
+        f_score[spawn.xy.x][spawn.xy.y] = distance_to_throne(throne.xy, spawn.xy);
 
         while (to_explore.removeOrNull()) |current| {
-            if (current.xy == self.throne_xy) {
+            if (current.xy == throne.xy) {
                 var path: std.ArrayListUnmanaged(XY) = .{};
 
                 var i: u32 = 0;
                 var c = current.xy;
-                while (c != self.spawn_xy) : (i += 1) {
+                while (c != spawn.xy) : (i += 1) {
                     c = came_from[c.x][c.y];
-                    path.append(allocator, c) catch return null;
+                    path.append(scratch_alloc, c) catch return null;
 
                     log.assert(
                         @src(),
@@ -182,7 +316,7 @@ pub const Grid = struct {
                         .{},
                     );
                 }
-                const slice = path.toOwnedSlice(allocator) catch return null;
+                const slice = path.toOwnedSlice(scratch_alloc) catch return null;
                 // The path originally is from Throne to the Spawner, need to
                 // reverse.
                 std.mem.reverse(XY, slice);
@@ -206,23 +340,19 @@ pub const Grid = struct {
 
             const neightbors: [4]?XY = .{
                 if (left) |n|
-                    if (self.cells[n.x][n.y].type == .Floor or
-                        self.cells[n.x][n.y].type == .Throne) left else null
+                    if (self.valid_path_cell(n)) left else null
                 else
                     null,
                 if (right) |n|
-                    if (self.cells[n.x][n.y].type == .Floor or
-                        self.cells[n.x][n.y].type == .Throne) right else null
+                    if (self.valid_path_cell(n)) right else null
                 else
                     null,
                 if (bot) |n|
-                    if (self.cells[n.x][n.y].type == .Floor or
-                        self.cells[n.x][n.y].type == .Throne) bot else null
+                    if (self.valid_path_cell(n)) bot else null
                 else
                     null,
                 if (top) |n|
-                    if (self.cells[n.x][n.y].type == .Floor or
-                        self.cells[n.x][n.y].type == .Throne) top else null
+                    if (self.valid_path_cell(n)) top else null
                 else
                     null,
             };
@@ -236,7 +366,7 @@ pub const Grid = struct {
                 if (new_g_score < old_g_score) {
                     came_from[nn.x][nn.y] = current.xy;
                     g_score[nn.x][nn.y] = new_g_score;
-                    const new_f_score = new_g_score + self.distance_to_throne(nn);
+                    const new_f_score = new_g_score + distance_to_throne(throne.xy, nn);
                     f_score[nn.x][nn.y] = new_f_score;
 
                     var found: bool = false;
@@ -257,10 +387,8 @@ pub const Grid = struct {
 
     const SaveState = struct {
         cells: []const SavedCell,
-        has_throne: bool = false,
-        throne_xy: XY = .{},
-        has_spawn: bool = false,
-        spawn_xy: XY = .{},
+        spawns: []const Spawn,
+        thrones: []const Throne,
 
         const SavedCell = struct {
             xy: XY,
@@ -275,22 +403,20 @@ pub const Grid = struct {
             .whitespace = .indent_4,
         };
         var cells: std.ArrayListUnmanaged(SaveState.SavedCell) = .{};
-        for (0..Grid.WIDTH) |x| {
-            for (0..Grid.HEIGHT) |y| {
-                const cell = &self.cells[x][y];
-                if (cell.type) |_|
+        for (0..Level.WIDTH) |x| {
+            for (0..Level.HEIGHT) |y| {
+                const cell = self.cells[x][y];
+                if (std.meta.activeTag(cell) != .None)
                     try cells.append(scratch_alloc, .{
                         .xy = .{ .x = @intCast(x), .y = @intCast(y) },
-                        .cell = cell.*,
+                        .cell = cell,
                     });
             }
         }
         const save_state = SaveState{
             .cells = cells.items,
-            .has_throne = self.has_throne,
-            .throne_xy = self.throne_xy,
-            .has_spawn = self.has_spawn,
-            .spawn_xy = self.spawn_xy,
+            .spawns = self.spawns.slice(),
+            .thrones = self.thrones.slice(),
         };
         try std.json.stringify(save_state, options, file.writer());
     }
@@ -308,21 +434,140 @@ pub const Grid = struct {
 
         const save_state = &ss.value;
 
-        for (0..Grid.WIDTH) |x| {
-            for (0..Grid.HEIGHT) |y| {
+        for (0..Level.WIDTH) |x| {
+            for (0..Level.HEIGHT) |y| {
                 const cell = &self.cells[x][y];
                 for (save_state.cells) |s_cell| {
                     if (s_cell.xy == XY{ .x = @intCast(x), .y = @intCast(y) }) {
                         cell.* = s_cell.cell;
                         break;
-                    } else cell.* = .{};
+                    } else cell.* = .{ .None = {} };
                 }
             }
         }
-        self.has_throne = save_state.has_throne;
-        self.throne_xy = save_state.throne_xy;
-        self.has_spawn = save_state.has_spawn;
-        self.spawn_xy = save_state.spawn_xy;
+        for (save_state.spawns) |s| {
+            self.spawns.append(s) catch unreachable;
+        }
+        for (save_state.thrones) |t| {
+            self.thrones.append(t) catch unreachable;
+        }
+    }
+
+    pub fn imgui_info(
+        self: *Self,
+        scratch_alloc: Allocator,
+        gpa_alloc: Allocator,
+    ) void {
+        var cimgui_id: i32 = 512;
+        var open: bool = true;
+
+        if (cimgui.igCollapsingHeader_BoolPtr("Level", &open, 0)) {
+            if (cimgui.igTreeNode_Str("Spawns")) {
+                defer cimgui.igTreePop();
+
+                for (self.spawns.slice(), 0..) |*spawn, i| {
+                    cimgui.igPushID_Int(cimgui_id);
+                    cimgui_id += 1;
+                    defer cimgui.igPopID();
+
+                    const label = std.fmt.allocPrintZ(
+                        scratch_alloc,
+                        "Spawn: {d}",
+                        .{i},
+                    ) catch unreachable;
+                    _ = cimgui.igSeparatorText(label);
+                    _ = cimgui.igValue_Uint("x", spawn.xy.x);
+                    _ = cimgui.igValue_Uint("y", spawn.xy.y);
+                    _ = cimgui.igValue_Uint("path_idx", spawn.path_idx);
+                }
+            }
+
+            if (cimgui.igTreeNode_Str("Thrones")) {
+                defer cimgui.igTreePop();
+
+                for (self.thrones.slice(), 0..) |*throne, i| {
+                    cimgui.igPushID_Int(cimgui_id);
+                    cimgui_id += 1;
+                    defer cimgui.igPopID();
+
+                    const label = std.fmt.allocPrintZ(
+                        scratch_alloc,
+                        "Throne: {d}",
+                        .{i},
+                    ) catch unreachable;
+                    _ = cimgui.igSeparatorText(label);
+                    _ = cimgui.igValue_Uint("x", throne.xy.x);
+                    _ = cimgui.igValue_Uint("y", throne.xy.y);
+                    _ = cimgui.igValue_Int("hp", throne.hp);
+                }
+            }
+
+            if (cimgui.igTreeNode_Str("Paths")) {
+                defer cimgui.igTreePop();
+
+                for (self.paths.slice(), 0..) |path, i| {
+                    cimgui.igPushID_Int(cimgui_id);
+                    cimgui_id += 1;
+                    defer cimgui.igPopID();
+
+                    const label = std.fmt.allocPrintZ(
+                        scratch_alloc,
+                        "Path: {d}",
+                        .{i},
+                    ) catch unreachable;
+                    _ = cimgui.igSeparatorText(label);
+                    _ = cimgui.igBeginChild_Str(
+                        "",
+                        .{},
+                        cimgui.ImGuiChildFlags_Borders | cimgui.ImGuiChildFlags_ResizeY,
+                        0,
+                    );
+                    defer cimgui.igEndChild();
+
+                    for (path, 0..) |xy, j| {
+                        const point = std.fmt.allocPrintZ(
+                            scratch_alloc,
+                            "{d}: x: {d} y: {d}",
+                            .{ j, xy.x, xy.y },
+                        ) catch unreachable;
+                        _ = cimgui.igText(point);
+                    }
+                }
+            }
+
+            if (cimgui.igButton("Find path", .{})) {
+                if (self.find_path(scratch_alloc)) |new_path| {
+                    const current_path = &self.paths.slice()[0];
+
+                    gpa_alloc.free(current_path.*);
+                    current_path.* = gpa_alloc.alloc(XY, new_path.len) catch unreachable;
+                    @memcpy(current_path.*, new_path);
+
+                    const enemy = &self.enemies.slice()[0];
+                    enemy.path_node_idx = 0;
+                    enemy.path_node_progress = 0.0;
+                }
+            }
+
+            _ = cimgui.igSeparatorText("Level Save/Load");
+            _ = cimgui.igInputText(
+                "File path",
+                &self.path,
+                self.path.len,
+                0,
+                null,
+                null,
+            );
+            const path = std.mem.sliceTo(&self.path, 0);
+            if (cimgui.igButton("Save level", .{})) {
+                self.save(scratch_alloc, path) catch
+                    log.err(@src(), "Cannot save level to {s}", .{path});
+            }
+            if (cimgui.igButton("Load level", .{})) {
+                self.load(scratch_alloc, path) catch
+                    log.err(@src(), "Cannot load level from {s}", .{path});
+            }
+        }
     }
 };
 
@@ -351,15 +596,14 @@ pub const App = struct {
     rmb_pressed: bool = false,
 
     input_mode: InputMode = .Selection,
-    level_path: [256]u8 = .{0} ** 256,
     show_grid: bool = true,
-    grid: Grid = .{},
-    current_cell_type: assets.ModelType = .Floor,
+    level: Level = .{},
+    current_cell_type: Level.CellType = .Floor,
 
-    current_path: []XY = &.{},
-    path_node_index: u32 = 0,
-    path_node_progress: f32 = 0.0,
-    enemy_position: ?math.Vec3 = null,
+    // current_path: []XY = &.{},
+    // path_node_index: u32 = 0,
+    // path_node_progress: f32 = 0.0,
+    // enemy_position: ?math.Vec3 = null,
 
     mouse_closest_t: ?f32 = null,
     selected_cell_xy: ?XY = null,
@@ -405,8 +649,6 @@ pub const App = struct {
             .top_down = true,
         };
 
-        const grid: Grid = .{};
-
         self.mesh_shader = mesh_shader;
         self.meshes = unpack_result.meshes;
         self.materials = unpack_result.materials;
@@ -416,10 +658,12 @@ pub const App = struct {
         self.debug_grid = debug_grid;
         self.floating_camera = floating_camera;
         self.topdown_camera = topdown_camera;
-        self.grid = grid;
 
+        self.level = .{};
         const default_path = "resources/level.json";
-        @memcpy(self.level_path[0..default_path.len], default_path);
+        @memcpy(self.level.path[0..default_path.len], default_path);
+        self.level.enemies.append(.{}) catch unreachable;
+        self.level.paths.append(&.{}) catch unreachable;
     }
 
     pub fn update(
@@ -476,18 +720,18 @@ pub const App = struct {
 
         if (self.input_mode == .Placement) {
             if (self.lmb_pressed)
-                self.grid.set(
+                self.level.set(
                     @intFromFloat(@floor(mouse_xy.x)),
                     @intFromFloat(@floor(mouse_xy.y)),
                     self.current_cell_type,
                 );
             if (self.rmb_pressed)
-                self.grid.unset(
+                self.level.unset(
                     @intFromFloat(@floor(mouse_xy.x)),
                     @intFromFloat(@floor(mouse_xy.y)),
                 );
         }
-        self.move_enemy_along_the_path(dt);
+        self.level.move_enemy_along_the_path(dt);
 
         self.draw_imgui();
 
@@ -495,40 +739,44 @@ pub const App = struct {
         gl.glClearColor(0.0, 0.0, 0.0, 1.0);
         gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT);
 
-        for (0..Grid.WIDTH) |x| {
-            for (0..Grid.HEIGHT) |y| {
-                const cell = &self.grid.cells[x][y];
-                if (cell.type) |cell_type| {
-                    const p = Grid.xy_to_vec3(.{ .x = @intCast(x), .y = @intCast(y) });
-                    const model = math.Mat4.IDENDITY.translate(p);
+        for (0..Level.WIDTH) |x| {
+            for (0..Level.HEIGHT) |y| {
+                const cell = self.level.cells[x][y];
+                switch (cell) {
+                    .None => {},
+                    else => {
+                        const model_type = Level.cell_to_model_type(cell);
+                        const p = Level.xy_to_vec3(.{ .x = @intCast(x), .y = @intCast(y) });
+                        const model = math.Mat4.IDENDITY.translate(p);
 
-                    const m = self.materials.getPtr(cell_type);
-                    var albedo = m.albedo;
-                    if (self.selected_cell_xy) |xy| {
-                        if (xy.x == x and xy.y == y) {
-                            self.selected_cell_time += dt;
-                            const t = @abs(@sin(self.selected_cell_time * 2.0));
-                            albedo = Self.HILIGHT_COLOR.lerp(albedo, t);
+                        const m = self.materials.getPtr(model_type);
+                        var albedo = m.albedo;
+                        if (self.selected_cell_xy) |xy| {
+                            if (xy.x == x and xy.y == y) {
+                                self.selected_cell_time += dt;
+                                const t = @abs(@sin(self.selected_cell_time * 2.0));
+                                albedo = Self.HILIGHT_COLOR.lerp(albedo, t);
+                            }
                         }
-                    }
-                    self.mesh_shader.setup(
-                        &camera.position,
-                        &camera.view,
-                        &camera.projection,
-                        &model,
-                        &.{ .x = 2.0, .y = 0.0, .z = 4.0 },
-                        &albedo,
-                        m.metallic,
-                        m.roughness,
-                        1.0,
-                    );
-                    self.gpu_meshes.getPtr(cell_type).draw();
+                        self.mesh_shader.setup(
+                            &camera.position,
+                            &camera.view,
+                            &camera.projection,
+                            &model,
+                            &.{ .x = 2.0, .y = 0.0, .z = 4.0 },
+                            &albedo,
+                            m.metallic,
+                            m.roughness,
+                            1.0,
+                        );
+                        self.gpu_meshes.getPtr(model_type).draw();
+                    },
                 }
             }
         }
 
-        if (self.enemy_position) |p| {
-            const transform = math.Mat4.IDENDITY.translate(p);
+        for (self.level.enemies.slice()) |*enemy| {
+            const transform = math.Mat4.IDENDITY.translate(enemy.position);
             self.mesh_shader.setup(
                 &camera.position,
                 &camera.view,
@@ -545,7 +793,7 @@ pub const App = struct {
 
         if (false) {
             for (self.current_path) |c| {
-                const p = Grid.xy_to_vec3(c);
+                const p = Level.xy_to_vec3(c);
                 const model = math.Mat4.IDENDITY.translate(p)
                     .scale(.{ .x = 0.5, .y = 0.5, .z = 1.5 });
 
@@ -592,39 +840,13 @@ pub const App = struct {
                 &camera.inverse_view,
                 &camera.inverse_projection,
                 self.debug_grid_scale,
-                &Grid.LIMITS,
+                &Level.LIMITS,
             );
             self.debug_grid.draw();
         }
 
         const imgui_data = cimgui.igGetDrawData();
         cimgui.ImGui_ImplOpenGL3_RenderDrawData(imgui_data);
-    }
-
-    pub fn move_enemy_along_the_path(self: *Self, dt: f32) void {
-        if (self.current_path.len == 0) {
-            self.enemy_position = null;
-            return;
-        }
-
-        const current_node = self.current_path[self.path_node_index];
-        const next_node = self.current_path[self.path_node_index + 1];
-
-        const current_node_position = Grid.xy_to_vec3(current_node);
-        const next_node_position = Grid.xy_to_vec3(next_node);
-
-        self.enemy_position =
-            current_node_position.lerp(next_node_position, self.path_node_progress);
-        self.path_node_progress += dt;
-        if (1.0 <= self.path_node_progress) {
-            self.path_node_progress = 0.0;
-
-            if (self.path_node_index == self.current_path.len - 2) {
-                self.path_node_index = 0;
-            } else {
-                self.path_node_index += 1;
-            }
-        }
     }
 
     pub fn find_closest_mouse_t(
@@ -638,44 +860,48 @@ pub const App = struct {
             return;
 
         self.mouse_closest_t = null;
-        for (0..Grid.WIDTH) |x| {
-            for (0..Grid.HEIGHT) |y| {
-                const cell = &self.grid.cells[x][y];
-                if (cell.type) |cell_type| {
-                    const transform = math.Mat4.IDENDITY
-                        .translate(.{
-                        .x = @as(f32, @floatFromInt(x)) + 0.5 - Grid.RIGHT,
-                        .y = @as(f32, @floatFromInt(y)) + 0.5 - Grid.TOP,
-                        .z = 0.0,
-                    });
+        for (0..Level.WIDTH) |x| {
+            for (0..Level.HEIGHT) |y| {
+                const cell = self.level.cells[x][y];
+                switch (cell) {
+                    .None => {},
+                    else => {
+                        const model_type = Level.cell_to_model_type(cell);
+                        const transform = math.Mat4.IDENDITY
+                            .translate(.{
+                            .x = @as(f32, @floatFromInt(x)) + 0.5 - Level.RIGHT,
+                            .y = @as(f32, @floatFromInt(y)) + 0.5 - Level.TOP,
+                            .z = 0.0,
+                        });
 
-                    const mesh = self.meshes.getPtr(cell_type);
-                    var ti = mesh.triangle_iterator();
-                    while (ti.next()) |t| {
-                        const tt = t.translate(&transform);
+                        const mesh = self.meshes.getPtr(model_type);
+                        var ti = mesh.triangle_iterator();
+                        while (ti.next()) |t| {
+                            const tt = t.translate(&transform);
 
-                        const is_ccw = math.triangle_ccw(mouse_ray.direction, &tt);
-                        if (!is_ccw)
-                            continue;
+                            const is_ccw = math.triangle_ccw(mouse_ray.direction, &tt);
+                            if (!is_ccw)
+                                continue;
 
-                        if (math.triangle_ray_intersect(
-                            mouse_ray,
-                            &tt,
-                        )) |i| {
-                            self.selected_cell_time = 0.0;
-                            const xy: XY = .{ .x = @intCast(x), .y = @intCast(y) };
-                            if (self.mouse_closest_t) |cpt| {
-                                if (i.t < cpt) {
+                            if (math.triangle_ray_intersect(
+                                mouse_ray,
+                                &tt,
+                            )) |i| {
+                                self.selected_cell_time = 0.0;
+                                const xy: XY = .{ .x = @intCast(x), .y = @intCast(y) };
+                                if (self.mouse_closest_t) |cpt| {
+                                    if (i.t < cpt) {
+                                        self.mouse_closest_t = i.t;
+                                        self.selected_cell_xy = xy;
+                                    }
+                                } else {
                                     self.mouse_closest_t = i.t;
                                     self.selected_cell_xy = xy;
                                 }
-                            } else {
-                                self.mouse_closest_t = i.t;
-                                self.selected_cell_xy = xy;
+                                break;
                             }
-                            break;
                         }
-                    }
+                    },
                 }
             }
         }
@@ -695,7 +921,6 @@ pub const App = struct {
         defer cimgui.igEnd();
 
         var cimgui_id: i32 = 0;
-
         if (cimgui.igCollapsingHeader_BoolPtr("Mouse info", &open, 0)) {
             _ = cimgui.igSeparatorText("Mouse");
             _ = cimgui.igValue_Uint("x", Platform.mouse_position.x);
@@ -744,7 +969,7 @@ pub const App = struct {
         }
 
         if (cimgui.igCollapsingHeader_BoolPtr(
-            "Level",
+            "Editor",
             &open,
             cimgui.ImGuiTreeNodeFlags_DefaultOpen,
         )) {
@@ -764,46 +989,9 @@ pub const App = struct {
                     self.current_cell_type = .Spawn;
                 if (cimgui.igSelectable_Bool("Throne", self.current_cell_type == .Throne, 0, .{}))
                     self.current_cell_type = .Throne;
-                if (cimgui.igSelectable_Bool("Enemy", self.current_cell_type == .Enemy, 0, .{}))
-                    self.current_cell_type = .Enemy;
-            }
-
-            _ = cimgui.igSeparatorText("Spawn XY");
-            _ = cimgui.igValue_Uint("x", self.grid.spawn_xy.x);
-            _ = cimgui.igValue_Uint("y", self.grid.spawn_xy.y);
-
-            _ = cimgui.igSeparatorText("Throne XY");
-            _ = cimgui.igValue_Uint("x", self.grid.throne_xy.x);
-            _ = cimgui.igValue_Uint("y", self.grid.throne_xy.y);
-
-            if (cimgui.igButton("Find path", .{})) {
-                if (self.grid.find_path(scratch_alloc)) |new_path| {
-                    gpa_alloc.free(self.current_path);
-                    self.current_path = gpa_alloc.alloc(XY, new_path.len) catch unreachable;
-                    @memcpy(self.current_path, new_path);
-                    self.path_node_index = 0;
-                    self.path_node_progress = 0.0;
-                }
-            }
-
-            _ = cimgui.igSeparatorText("Level Save/Load");
-            _ = cimgui.igInputText(
-                "File path",
-                &self.level_path,
-                self.level_path.len,
-                0,
-                null,
-                null,
-            );
-            const path = std.mem.sliceTo(&self.level_path, 0);
-            if (cimgui.igButton("Save level", .{})) {
-                self.grid.save(scratch_alloc, path) catch
-                    log.err(@src(), "Cannot save level to {s}", .{path});
-            }
-            if (cimgui.igButton("Load level", .{})) {
-                self.grid.load(scratch_alloc, path) catch
-                    log.err(@src(), "Cannot load level from {s}", .{path});
             }
         }
+
+        self.level.imgui_info(scratch_alloc, gpa_alloc);
     }
 };
