@@ -777,38 +777,39 @@ pub const App = struct {
 
         for (self.level.enemies.slice()) |*enemy| {
             const transform = math.Mat4.IDENDITY.translate(enemy.position);
+            const m = self.materials.getPtr(.Enemy);
             self.mesh_shader.setup(
                 &camera.position,
                 &camera.view,
                 &camera.projection,
                 &transform,
                 &.{ .x = 2.0, .y = 0.0, .z = 4.0 },
-                &.{ .x = 0.0, .y = 0.0, .z = 1.0 },
-                0.0,
-                0.0,
+                &m.albedo,
+                m.metallic,
+                m.roughness,
                 1.0,
             );
             self.gpu_meshes.getPtr(.Enemy).draw();
         }
 
-        if (false) {
-            for (self.current_path) |c| {
-                const p = Level.xy_to_vec3(c);
-                const model = math.Mat4.IDENDITY.translate(p)
-                    .scale(.{ .x = 0.5, .y = 0.5, .z = 1.5 });
+        for (self.level.paths.slice()) |path| {
+            for (path) |xy| {
+                const p = Level.xy_to_vec3(xy);
+                const model = math.Mat4.IDENDITY.translate(p);
 
+                const m = self.materials.getPtr(.PathMarker);
                 self.mesh_shader.setup(
                     &camera.position,
                     &camera.view,
                     &camera.projection,
                     &model,
                     &.{ .x = 2.0, .y = 0.0, .z = 4.0 },
-                    &.{ .x = 0.0, .y = 0.0, .z = 1.0 },
-                    0.0,
-                    0.0,
+                    &m.albedo,
+                    m.metallic,
+                    m.roughness,
                     1.0,
                 );
-                self.cube.draw();
+                self.gpu_meshes.getPtr(.PathMarker).draw();
             }
         }
 

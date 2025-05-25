@@ -13,6 +13,7 @@ const MODEL_PATHS = ModelPathsType.init(.{
     .Spawn = assets.DEFAULT_MESHES_DIR_PATH ++ "/spawn.glb",
     .Throne = assets.DEFAULT_MESHES_DIR_PATH ++ "/throne.glb",
     .Enemy = assets.DEFAULT_MESHES_DIR_PATH ++ "/enemy.glb",
+    .PathMarker = assets.DEFAULT_MESHES_DIR_PATH ++ "/path_marker.glb",
 });
 
 pub fn main() !void {
