@@ -42,6 +42,16 @@ pub fn comptime_err(
     @compileError(std.fmt.comptimePrint("[{s}:{s}:{}:{}] " ++ format, t));
 }
 
+pub fn panic(
+    src: std.builtin.SourceLocation,
+    comptime format: []const u8,
+    args: anytype,
+) noreturn {
+    const T = make_struct(@TypeOf(args));
+    const t = fill_struct(T, src, args);
+    std.debug.panic("[{s}:{s}:{}:{}] " ++ format, t);
+}
+
 pub fn assert(
     src: std.builtin.SourceLocation,
     ok: bool,
