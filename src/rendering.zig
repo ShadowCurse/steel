@@ -163,7 +163,7 @@ pub const MeshShader = struct {
         camera_projection: *const math.Mat4,
         model: *const math.Mat4,
         light_position: *const math.Vec3,
-        albedo: *const math.Vec4,
+        albedo: *const math.Color4,
         metallic: f32,
         roughness: f32,
         ao: f32,
@@ -176,7 +176,7 @@ pub const MeshShader = struct {
         gl.glUniform3fv(self.lights_pos_loc, 1, @ptrCast(light_position));
         const c = math.Vec3.ONE;
         gl.glUniform3fv(self.lights_color_loc, 1, @ptrCast(&c));
-        gl.glUniform3f(self.albedo_loc, albedo.x, albedo.y, albedo.z);
+        gl.glUniform3f(self.albedo_loc, albedo.r, albedo.g, albedo.b);
         gl.glUniform1f(self.metallic_loc, metallic);
         gl.glUniform1f(self.roughness_loc, roughness);
         gl.glUniform1f(self.ao_loc, ao);

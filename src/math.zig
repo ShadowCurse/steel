@@ -3,6 +3,28 @@ const log = @import("log.zig");
 
 pub const PI = std.math.pi;
 
+pub const Color3 = extern struct {
+    r: f32 = 0.0,
+    g: f32 = 0.0,
+    b: f32 = 0.0,
+};
+
+pub const Color4 = extern struct {
+    r: f32 = 0.0,
+    g: f32 = 0.0,
+    b: f32 = 0.0,
+    a: f32 = 0.0,
+
+    pub inline fn lerp(start: Color4, end: Color4, t: f32) Color4 {
+        return .{
+            .r = start.r + (end.r - start.r) * t,
+            .g = start.g + (end.g - start.g) * t,
+            .b = start.b + (end.b - start.b) * t,
+            .a = start.a + (end.a - start.a) * t,
+        };
+    }
+};
+
 pub const Ray = struct {
     origin: Vec3,
     direction: Vec3,

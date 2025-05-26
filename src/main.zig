@@ -551,9 +551,8 @@ pub const Level = struct {
                         .{i},
                     ) catch unreachable;
                     _ = cimgui.igSeparatorText(label);
-                    _ = cimgui.igValue_Uint("x", spawn.xy.x);
-                    _ = cimgui.igValue_Uint("y", spawn.xy.y);
-                    _ = cimgui.igCheckbox("Active", &spawn.active);
+
+                    cimgui.format(spawn);
                 }
             }
 
@@ -571,9 +570,8 @@ pub const Level = struct {
                         .{i},
                     ) catch unreachable;
                     _ = cimgui.igSeparatorText(label);
-                    _ = cimgui.igValue_Uint("x", throne.xy.x);
-                    _ = cimgui.igValue_Uint("y", throne.xy.y);
-                    _ = cimgui.igValue_Int("hp", throne.hp);
+
+                    cimgui.format(throne);
                 }
             }
 
@@ -591,37 +589,7 @@ pub const Level = struct {
                         .{i},
                     ) catch unreachable;
                     _ = cimgui.igSeparatorText(label);
-                    _ = cimgui.igValue_Float("x", enemy.position.x, null);
-                    _ = cimgui.igValue_Float("y", enemy.position.y, null);
-                    _ = cimgui.igValue_Float("z", enemy.position.z, null);
-                    _ = cimgui.igValue_Uint("current x", enemy.current_xy.x);
-                    _ = cimgui.igValue_Uint("current y", enemy.current_xy.y);
-                    _ = cimgui.igValue_Bool("finished", enemy.finished);
-
-                    _ = cimgui.igCheckbox("Show path", &enemy.show_path);
-
-                    if (enemy.path) |path| {
-                        if (cimgui.igTreeNode_Str("Path")) {
-                            defer cimgui.igTreePop();
-
-                            _ = cimgui.igBeginChild_Str(
-                                "",
-                                .{},
-                                cimgui.ImGuiChildFlags_Borders | cimgui.ImGuiChildFlags_ResizeY,
-                                0,
-                            );
-                            defer cimgui.igEndChild();
-
-                            for (path, 0..) |xy, j| {
-                                const point = std.fmt.allocPrintZ(
-                                    self.scratch_alloc,
-                                    "{d}: x: {d} y: {d}",
-                                    .{ j, xy.x, xy.y },
-                                ) catch unreachable;
-                                _ = cimgui.igText(point);
-                            }
-                        }
-                    }
+                    cimgui.format(enemy);
                 }
             }
 
@@ -681,7 +649,7 @@ pub const App = struct {
     selected_cell_xy: ?XY = null,
     selected_cell_time: f32 = 0.0,
 
-    const HILIGHT_COLOR: math.Vec4 = .{ .y = 1.0, .z = 1.0 };
+    const HILIGHT_COLOR: math.Color4 = .{ .g = 1.0, .b = 1.0 };
 
     const InputMode = enum {
         Selection,
@@ -877,7 +845,7 @@ pub const App = struct {
                             &camera.projection,
                             &model,
                             &.{ .x = 2.0, .y = 0.0, .z = 4.0 },
-                            &m.albedo.lerp(.{ .x = 1.0 }, t),
+                            &m.albedo.lerp(.{ .r = 1.0 }, t),
                             m.metallic,
                             m.roughness,
                             1.0,
@@ -1011,7 +979,8 @@ pub const App = struct {
                 cimgui.igPushID_Int(cimgui_id);
                 cimgui_id += 1;
                 defer cimgui.igPopID();
-                self.floating_camera.imgui_options();
+
+                cimgui.format(&self.floating_camera);
             }
             _ = cimgui.igSeparatorText(
                 if (self.use_topdown_camera) "Topdown camera +" else "Topdown camera",
@@ -1020,7 +989,8 @@ pub const App = struct {
                 cimgui.igPushID_Int(cimgui_id);
                 cimgui_id += 1;
                 defer cimgui.igPopID();
-                self.topdown_camera.imgui_options();
+
+                cimgui.format(&self.topdown_camera);
             }
         }
 
@@ -1036,9 +1006,7 @@ pub const App = struct {
                 cimgui_id += 1;
                 defer cimgui.igPopID();
 
-                _ = cimgui.igColorEdit4("albedo", @ptrCast(&m.value.albedo), 0);
-                _ = cimgui.igSliderFloat("metallic", &m.value.metallic, 0.0, 1.0, null, 0);
-                _ = cimgui.igSliderFloat("roughness", &m.value.roughness, 0.0, 1.0, null, 0);
+                cimgui.format(m.value);
             }
         }
 

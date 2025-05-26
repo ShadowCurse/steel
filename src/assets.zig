@@ -7,6 +7,7 @@ const cgltf = @import("bindings/cgltf.zig");
 const Allocator = std.mem.Allocator;
 const FixedArena = memory.FixedArena;
 const Mesh = @import("mesh.zig");
+const Color4 = math.Color4;
 const Vec4 = math.Vec4;
 const Vec3 = math.Vec3;
 const Vec2 = math.Vec2;
@@ -56,7 +57,7 @@ pub const ModelType = enum {
 };
 
 pub const Material = struct {
-    albedo: Vec4,
+    albedo: Color4,
     metallic: f32,
     roughness: f32,
 };
