@@ -1,6 +1,6 @@
 const log = @import("../log.zig");
 const math = @import("../math.zig");
-const XY = @import("../main.zig").XY;
+const XY = @import("../level.zig").XY;
 
 const cimgui = @cImport({
     @cDefine("CIMGUI_DEFINE_ENUMS_AND_STRUCTS", "");
