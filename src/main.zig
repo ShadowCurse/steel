@@ -257,7 +257,8 @@ pub const App = struct {
             }
         }
 
-        for (self.level.enemies.slice()) |*enemy| {
+        var iter = self.level.enemies.iterator();
+        while (iter.next()) |enemy| {
             {
                 const transform = math.Mat4.IDENDITY.translate(enemy.position);
                 const m = self.materials.getPtr(.Enemy);

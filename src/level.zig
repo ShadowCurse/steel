@@ -7,7 +7,6 @@ const memory = @import("memory.zig");
 const RoundArena = memory.RoundArena;
 const Allocator = memory.Allocator;
 const ObjectPool = memory.ObjectPool;
-const BoundedArray = std.BoundedArray;
 
 scratch_alloc: Allocator = undefined,
 path_allocator: RoundArena = undefined,
@@ -18,7 +17,7 @@ cells: [Self.WIDTH][Self.HEIGHT]Cell = .{.{Cell{ .None = {} }} ** Self.HEIGHT} *
 
 spawns: ObjectPool(Spawn, SPAWNS) = .{},
 thrones: ObjectPool(Throne, THRONES) = .{},
-enemies: BoundedArray(Enemy, ENEMIES) = .{},
+enemies: ObjectPool(Enemy, ENEMIES) = .{},
 
 selected_object: SelectedObject = .None,
 
@@ -237,35 +236,33 @@ pub fn run_spawns(self: *Self, dt: f32) void {
         if (spawn.spawn_time_remaining <= 0.0) {
             spawn.spawn_time_remaining = spawn.spawn_time;
             if (self.find_path(spawn.xy)) |new_path| {
-                self.enemies.append(.init(new_path)) catch {
+                if (self.enemies.alloc()) |new_enemy|
+                    new_enemy.* = .init(new_path)
+                else {
                     log.warn(@src(), "Cannot spawn enemies. Capacity is full", .{});
                     return;
-                };
+                }
             }
         }
     }
 }
 
 pub fn update_enemies(self: *Self, dt: f32) void {
-    const enemies = self.enemies.slice();
-    for (enemies) |*enemy| {
+    var iter = self.enemies.iterator();
+    while (iter.next()) |enemy| {
         enemy.move(dt);
-    }
-    var i: usize = 0;
-    var end = enemies.len;
-    while (i < end) : (i += 1) {
-        if (enemies[i].finished) {
-            _ = self.enemies.swapRemove(i);
-            end -= 1;
+        if (enemy.finished) {
+            self.enemies.free(enemy);
         }
     }
 }
 
 pub fn update_enemies_paths(self: *Self) void {
-    for (self.enemies.slice(), 0..) |*enemy, i| {
+    var iter = self.enemies.iterator();
+    while (iter.next()) |enemy| {
         const new_path = self.find_path(enemy.current_xy);
         enemy.update_path(new_path);
-        log.info(@src(), "Enemy: {d} found new path: {}", .{ i, new_path != null });
+        log.info(@src(), "Enemy: {} found new path: {}", .{ enemy, new_path != null });
     }
 }
 
@@ -507,7 +504,9 @@ pub fn imgui_info(
         if (cimgui.igTreeNode_Str("Enemies")) {
             defer cimgui.igTreePop();
 
-            for (self.enemies.slice(), 0..) |*enemy, i| {
+            var iter = self.enemies.iterator();
+            var i: u32 = 0;
+            while (iter.next()) |enemy| : (i += 1) {
                 cimgui.igPushID_Int(cimgui_id);
                 cimgui_id += 1;
                 defer cimgui.igPopID();
