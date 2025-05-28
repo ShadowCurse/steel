@@ -194,3 +194,230 @@ pub const RoundArena = struct {
         _ = ret_addr;
     }
 };
+
+pub fn ObjectPool(comptime T: type, comptime N: u32) type {
+    return struct {
+        array: std.BoundedArray(Node, N) = .{},
+        first_node: ?*Node = null,
+        last_node: ?*Node = null,
+        free_list: ?*Node = null,
+
+        const Self = @This();
+
+        const Node = struct {
+            next: ?*Node = null,
+            prev: ?*Node = null,
+            value: T,
+        };
+
+        pub fn full(self: *const Self) bool {
+            return self.free_list == null and self.array.buffer.len == self.array.capacity();
+        }
+
+        pub fn compact(self: *const Self, allocator: Allocator) ![]T {
+            const array = try allocator.alloc(T, N);
+            var i: u32 = 0;
+            var iter = self.const_iterator();
+            while (iter.next()) |v| : (i += 1)
+                array[i] = v.*;
+            return array[0..i];
+        }
+
+        pub fn alloc(self: *Self) ?*T {
+            const new_node =
+                if (self.free_list) |free_node| blk: {
+                    self.free_list = free_node.next;
+                    break :blk free_node;
+                } else blk: {
+                    break :blk self.array.addOne() catch return null;
+                };
+
+            if (self.last_node) |last_node|
+                last_node.next = new_node;
+            new_node.prev = self.last_node;
+            self.last_node = new_node;
+
+            if (self.first_node == null)
+                self.first_node = new_node;
+
+            return &new_node.value;
+        }
+
+        pub fn free(self: *Self, value: *T) void {
+            const old_node: *Node = @alignCast(@fieldParentPtr("value", value));
+
+            if (old_node.prev) |prev|
+                prev.next = old_node.next
+            else
+                self.first_node = old_node.next;
+
+            if (old_node.next) |next|
+                next.prev = old_node.prev
+            else
+                self.last_node = old_node.prev;
+
+            if (self.free_list) |free_node|
+                old_node.next = free_node
+            else
+                old_node.next = null;
+
+            old_node.prev = null;
+            self.free_list = old_node;
+        }
+
+        pub const Iterator = struct {
+            pool: *Self,
+            current_node: ?*Node,
+
+            pub fn next(self: *Iterator) ?*T {
+                if (self.current_node) |cn| {
+                    const result = &cn.value;
+                    self.current_node = cn.next;
+                    return result;
+                } else return null;
+            }
+        };
+
+        pub fn iterator(self: *Self) Iterator {
+            return .{
+                .pool = self,
+                .current_node = self.first_node,
+            };
+        }
+
+        pub const ConstIterator = struct {
+            pool: *const Self,
+            current_node: ?*Node,
+
+            pub fn next(self: *ConstIterator) ?*const T {
+                if (self.current_node) |cn| {
+                    const result = &cn.value;
+                    self.current_node = cn.next;
+                    return result;
+                } else return null;
+            }
+        };
+        pub fn const_iterator(self: *const Self) ConstIterator {
+            return .{
+                .pool = self,
+                .current_node = self.first_node,
+            };
+        }
+    };
+}
+
+test "ObjectPool_simple_iter" {
+    var op = ObjectPool(usize, 8){};
+
+    var os: [8]*usize = undefined;
+    for (0..8) |i| {
+        const o = op.alloc().?;
+        o.* = i;
+        os[i] = o;
+    }
+
+    {
+        var iter = op.iterator();
+        var i: usize = 0;
+        while (iter.next()) |o| : (i += 1) {
+            try std.testing.expect(o.* == i);
+        }
+    }
+}
+
+test "ObjectPool_free_alloc_0" {
+    var op = ObjectPool(usize, 8){};
+
+    var os: [8]*usize = undefined;
+    for (0..8) |i| {
+        const o = op.alloc().?;
+        o.* = i;
+        os[i] = o;
+    }
+    {
+        op.free(os[0]);
+        {
+            const expected = [_]usize{ 1, 2, 3, 4, 5, 6, 7 };
+            var iter = op.iterator();
+            var i: usize = 0;
+            while (iter.next()) |o| : (i += 1) {
+                try std.testing.expect(o.* == expected[i]);
+            }
+        }
+        os[0] = op.alloc().?;
+        os[0].* = 0;
+        {
+            const expected = [_]usize{ 1, 2, 3, 4, 5, 6, 7, 0 };
+            var iter = op.iterator();
+            var i: usize = 0;
+            while (iter.next()) |o| : (i += 1) {
+                try std.testing.expect(o.* == expected[i]);
+            }
+        }
+    }
+}
+
+test "ObjectPool_free_alloc_5" {
+    var op = ObjectPool(usize, 8){};
+
+    var os: [8]*usize = undefined;
+    for (0..8) |i| {
+        const o = op.alloc().?;
+        o.* = i;
+        os[i] = o;
+    }
+    {
+        op.free(os[5]);
+        {
+            const expected = [_]usize{ 0, 1, 2, 3, 4, 6, 7 };
+            var iter = op.iterator();
+            var i: usize = 0;
+            while (iter.next()) |o| : (i += 1) {
+                try std.testing.expect(o.* == expected[i]);
+            }
+        }
+        os[5] = op.alloc().?;
+        os[5].* = 5;
+        {
+            const expected = [_]usize{ 0, 1, 2, 3, 4, 6, 7, 5 };
+            var iter = op.iterator();
+            var i: usize = 0;
+            while (iter.next()) |o| : (i += 1) {
+                try std.testing.expect(o.* == expected[i]);
+            }
+        }
+    }
+}
+
+test "ObjectPool_free_alloc_7" {
+    var op = ObjectPool(usize, 8){};
+
+    var os: [8]*usize = undefined;
+    for (0..8) |i| {
+        const o = op.alloc().?;
+        o.* = i;
+        os[i] = o;
+    }
+    {
+        op.free(os[7]);
+        {
+            const expected = [_]usize{ 0, 1, 2, 3, 4, 5, 6 };
+            var iter = op.iterator();
+            var i: usize = 0;
+            while (iter.next()) |o| : (i += 1) {
+                try std.testing.expect(o.* == expected[i]);
+            }
+        }
+
+        os[7] = op.alloc().?;
+        os[7].* = 7;
+        {
+            const expected = [_]usize{ 0, 1, 2, 3, 4, 5, 6, 7 };
+            var iter = op.iterator();
+            var i: usize = 0;
+            while (iter.next()) |o| : (i += 1) {
+                try std.testing.expect(o.* == expected[i]);
+            }
+        }
+    }
+}
