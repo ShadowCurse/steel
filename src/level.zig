@@ -380,11 +380,14 @@ pub fn find_path(self: *Self, start_xy: XY) ?[]XY {
     return null;
 }
 
+pub fn reset(self: *Self) void {
+    self.spawns.reset();
+    self.thrones.reset();
+    self.enemies.reset();
+}
+
 const SaveState = struct {
     cells: []const SavedCell,
-    spawns: []const Spawn,
-    thrones: []const Throne,
-
     const SavedCell = struct {
         xy: XY,
         cell: Cell,
@@ -410,13 +413,13 @@ pub fn save(self: *const Self, path: []const u8) !void {
     }
     const save_state = SaveState{
         .cells = cells.items,
-        .spawns = try self.spawns.compact(self.scratch_alloc),
-        .thrones = try self.thrones.compact(self.scratch_alloc),
     };
     try std.json.stringify(save_state, options, file.writer());
 }
 
 pub fn load(self: *Self, path: []const u8) !void {
+    self.reset();
+
     const file_mem = try memory.FileMem.init(path);
     defer file_mem.deinit();
 
@@ -434,17 +437,23 @@ pub fn load(self: *Self, path: []const u8) !void {
             const cell = &self.cells[x][y];
             for (save_state.cells) |s_cell| {
                 if (s_cell.xy == XY{ .x = @intCast(x), .y = @intCast(y) }) {
-                    cell.* = s_cell.cell;
+                    switch (s_cell.cell) {
+                        .Spawn => |spawn| {
+                            const new_spawn = self.spawns.alloc().?;
+                            new_spawn.* = spawn.*;
+                            cell.* = .{ .Spawn = new_spawn };
+                        },
+                        .Throne => |throne| {
+                            const new_throne = self.thrones.alloc().?;
+                            new_throne.* = throne.*;
+                            cell.* = .{ .Throne = new_throne };
+                        },
+                        else => cell.* = s_cell.cell,
+                    }
                     break;
                 } else cell.* = .{ .None = {} };
             }
         }
-    }
-    for (save_state.spawns) |s| {
-        self.spawns.alloc().?.* = s;
-    }
-    for (save_state.thrones) |t| {
-        self.thrones.alloc().?.* = t;
     }
 }
 

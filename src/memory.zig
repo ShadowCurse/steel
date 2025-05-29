@@ -210,6 +210,10 @@ pub fn ObjectPool(comptime T: type, comptime N: u32) type {
             value: T,
         };
 
+        pub fn reset(self: *Self) void {
+            self.* = .{};
+        }
+
         pub fn full(self: *const Self) bool {
             return self.free_list == null and self.array.buffer.len == self.array.capacity();
         }
