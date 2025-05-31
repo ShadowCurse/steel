@@ -90,8 +90,13 @@ pub const App = struct {
     current_cell_type: Level.CellType = .Floor,
 
     mouse_closest_t: ?f32 = null,
-    selected_cell_xy: ?Level.XY = null,
-    selected_cell_time: f32 = 0.0,
+    selected_item: ?SelectedItem = null,
+    selected_item_time: f32 = 0.0,
+
+    const SelectedItem = union(enum) {
+        CellXY: Level.XY,
+        Enemy: *Level.Enemy,
+    };
 
     const HILIGHT_COLOR: math.Color4 = .{ .g = 1.0, .b = 1.0 };
 
@@ -211,7 +216,7 @@ pub const App = struct {
         const mouse_xy = camera.mouse_to_xy(mouse_clip);
 
         const mouse_ray = camera.mouse_to_ray(mouse_clip);
-        self.find_closest_mouse_t(&mouse_ray);
+        self.select_item(&mouse_ray);
 
         if (self.input_mode == .Placement) {
             if (self.lmb_pressed)
@@ -248,11 +253,16 @@ pub const App = struct {
 
                         const m = self.materials.getPtr(model_type);
                         var albedo = m.albedo;
-                        if (self.selected_cell_xy) |xy| {
-                            if (xy.x == x and xy.y == y) {
-                                self.selected_cell_time += dt;
-                                const t = @abs(@sin(self.selected_cell_time * 2.0));
-                                albedo = Self.HILIGHT_COLOR.lerp(albedo, t);
+                        if (self.selected_item) |si| {
+                            switch (si) {
+                                .CellXY => |xy| {
+                                    if (xy.x == x and xy.y == y) {
+                                        self.selected_item_time += dt;
+                                        const t = @abs(@sin(self.selected_item_time * 2.0));
+                                        albedo = Self.HILIGHT_COLOR.lerp(albedo, t);
+                                    }
+                                },
+                                else => {},
                             }
                         }
                         self.mesh_shader.setup(
@@ -280,6 +290,21 @@ pub const App = struct {
             {
                 const transform = math.Mat4.IDENDITY.translate(enemy.position);
                 const m = self.materials.getPtr(.Enemy);
+
+                var albedo = m.albedo;
+                if (self.selected_item) |si| {
+                    switch (si) {
+                        .Enemy => |e| {
+                            if (enemy == e) {
+                                self.selected_item_time += dt;
+                                const t = @abs(@sin(self.selected_item_time * 2.0));
+                                albedo = Self.HILIGHT_COLOR.lerp(albedo, t);
+                            }
+                        },
+                        else => {},
+                    }
+                }
+
                 self.mesh_shader.setup(
                     &camera.position,
                     &camera.view,
@@ -289,7 +314,7 @@ pub const App = struct {
                     &LIGHTS_COLOR,
                     &DIRECT_LIGHT_DIRECTION,
                     &DIRECT_LIGHT_COLOR,
-                    &m.albedo,
+                    &albedo,
                     m.metallic,
                     m.roughness,
                     0.03,
@@ -365,7 +390,7 @@ pub const App = struct {
         cimgui.ImGui_ImplOpenGL3_RenderDrawData(imgui_data);
     }
 
-    pub fn find_closest_mouse_t(
+    pub fn select_item(
         self: *Self,
         mouse_ray: *const math.Ray,
     ) void {
@@ -403,21 +428,54 @@ pub const App = struct {
                                 mouse_ray,
                                 &tt,
                             )) |i| {
-                                self.selected_cell_time = 0.0;
+                                self.selected_item_time = 0.0;
                                 const xy: Level.XY = .{ .x = @intCast(x), .y = @intCast(y) };
                                 if (self.mouse_closest_t) |cpt| {
                                     if (i.t < cpt) {
                                         self.mouse_closest_t = i.t;
-                                        self.selected_cell_xy = xy;
+                                        self.selected_item = .{ .CellXY = xy };
                                     }
                                 } else {
                                     self.mouse_closest_t = i.t;
-                                    self.selected_cell_xy = xy;
+                                    self.selected_item = .{ .CellXY = xy };
                                 }
                                 break;
                             }
                         }
                     },
+                }
+            }
+        }
+
+        const enemy_mesh = self.meshes.getPtr(.Enemy);
+        var it = self.level.enemies.iterator();
+        while (it.next()) |enemy| {
+            var ti = enemy_mesh.triangle_iterator();
+            while (ti.next()) |t| {
+                const transform = math.Mat4.IDENDITY
+                    .translate(enemy.position);
+
+                const tt = t.translate(&transform);
+
+                const is_ccw = math.triangle_ccw(mouse_ray.direction, &tt);
+                if (!is_ccw)
+                    continue;
+
+                if (math.triangle_ray_intersect(
+                    mouse_ray,
+                    &tt,
+                )) |i| {
+                    self.selected_item_time = 0.0;
+                    if (self.mouse_closest_t) |cpt| {
+                        if (i.t < cpt) {
+                            self.mouse_closest_t = i.t;
+                            self.selected_item = .{ .Enemy = enemy };
+                        }
+                    } else {
+                        self.mouse_closest_t = i.t;
+                        self.selected_item = .{ .Enemy = enemy };
+                    }
+                    break;
                 }
             }
         }
