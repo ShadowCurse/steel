@@ -5,9 +5,13 @@ varying vec3 f_position;
 varying vec3 f_normal;
 varying vec2 f_uv;
 
+#define NUM_LIGHTS 4
+
 uniform vec3 camera_position;
-uniform vec3 light_positions[1];
-uniform vec3 light_colors[1];
+uniform vec3 light_positions[NUM_LIGHTS];
+uniform vec3 light_colors[NUM_LIGHTS];
+uniform vec3 direct_light_direction;
+uniform vec3 direct_light_color;
 uniform vec3 albedo;
 uniform float metallic;
 uniform float roughness;
@@ -55,7 +59,7 @@ void main() {
     base_reflectivity = mix(base_reflectivity, albedo, metallic);
 	           
     vec3 radiance_out = vec3(0.0);
-    for(int i = 0; i < 1; ++i) {
+    for(int i = 0; i < NUM_LIGHTS; ++i) {
         // calculate per-light radiance
         vec3 to_light     = normalize(light_positions[i] - f_position);
         vec3 half_vector  = normalize(to_camera + to_light);
@@ -64,7 +68,7 @@ void main() {
         float ndc = max(dot(normal, to_camera), 0.0);                
         float ndh = max(dot(half_vector, to_camera), 0.0);
 
-        float distance    = length(light_positions[i] - f_position) / 5.0;
+        float distance    = length(light_positions[i] - f_position);
         float attenuation = 1.0 / (distance * distance);
         vec3 radiance     = light_colors[i] * attenuation;        
         
@@ -84,8 +88,38 @@ void main() {
         // add to outgoing radiance
         radiance_out += (kD * albedo / PI + specular) * radiance * ndl; 
     }
+
+    // Direct light
+    {
+        // calculate per-light radiance
+        vec3 to_light     = normalize(-direct_light_direction);
+        vec3 half_vector  = normalize(to_camera + to_light);
+
+        float ndl = max(dot(normal, to_light), 0.0);                
+        float ndc = max(dot(normal, to_camera), 0.0);                
+        float ndh = max(dot(half_vector, to_camera), 0.0);
+
+        vec3 radiance = direct_light_color;        
+        
+        // cook-torrance brdf
+        float normalDF = distribution_ggx(normal, half_vector, roughness);        
+        float G        = geometry_smith(ndl, ndc, roughness);      
+        vec3 F         = fresnel_schlick(ndh, base_reflectivity);       
+        
+        vec3 kS = F;
+        vec3 kD = vec3(1.0) - kS;
+        kD *= 1.0 - metallic;	  
+        
+        vec3 numerator    = normalDF * G * F;
+        float denominator = 4.0 * ndc * ndl + 0.0001;
+        vec3 specular     = numerator / denominator;  
+            
+        // add to outgoing radiance
+        radiance_out += (kD * albedo / PI + specular) * radiance * ndl; 
+
+    }
   
-    vec3 ambient = vec3(0.03) * albedo * ao;
+    vec3 ambient = albedo * ao;
     vec3 color = ambient + radiance_out;
 	
     color = color / (color + vec3(1.0));

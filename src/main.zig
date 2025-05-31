@@ -100,6 +100,21 @@ pub const App = struct {
         Placement,
     };
 
+    const LIGHTS_POSITION: [MeshShader.NUM_LIGHTS]math.Vec3 = .{
+        .{ .x = 1.0, .y = 1.0, .z = 1.0 },
+        .{ .x = -1.0, .y = 1.0, .z = 1.0 },
+        .{ .x = 1.0, .y = -1.0, .z = 1.0 },
+        .{ .x = -1.0, .y = -1.0, .z = 1.0 },
+    };
+    const LIGHTS_COLOR: [MeshShader.NUM_LIGHTS]math.Color3 = .{
+        .{ .r = 1.0 },
+        .{ .g = 1.0 },
+        .{ .b = 1.0 },
+        .{ .r = 1.0, .g = 1.0, .b = 1.0 },
+    };
+    const DIRECT_LIGHT_DIRECTION: math.Vec3 = .{ .x = -0.5, .y = -0.5, .z = -1.0 };
+    const DIRECT_LIGHT_COLOR: math.Color3 = .{ .r = 1.0, .g = 1.0, .b = 1.0 };
+
     const Self = @This();
 
     pub fn init(self: *Self) !void {
@@ -245,11 +260,14 @@ pub const App = struct {
                             &camera.view,
                             &camera.projection,
                             &model,
-                            &.{ .x = 2.0, .y = 0.0, .z = 4.0 },
+                            &LIGHTS_POSITION,
+                            &LIGHTS_COLOR,
+                            &DIRECT_LIGHT_DIRECTION,
+                            &DIRECT_LIGHT_COLOR,
                             &albedo,
                             m.metallic,
                             m.roughness,
-                            1.0,
+                            0.03,
                         );
                         self.gpu_meshes.getPtr(model_type).draw();
                     },
@@ -267,11 +285,14 @@ pub const App = struct {
                     &camera.view,
                     &camera.projection,
                     &transform,
-                    &.{ .x = 2.0, .y = 0.0, .z = 4.0 },
+                    &LIGHTS_POSITION,
+                    &LIGHTS_COLOR,
+                    &DIRECT_LIGHT_DIRECTION,
+                    &DIRECT_LIGHT_COLOR,
                     &m.albedo,
                     m.metallic,
                     m.roughness,
-                    1.0,
+                    0.03,
                 );
                 self.gpu_meshes.getPtr(.Enemy).draw();
             }
@@ -289,11 +310,14 @@ pub const App = struct {
                             &camera.view,
                             &camera.projection,
                             &model,
-                            &.{ .x = 2.0, .y = 0.0, .z = 4.0 },
+                            &LIGHTS_POSITION,
+                            &LIGHTS_COLOR,
+                            &DIRECT_LIGHT_DIRECTION,
+                            &DIRECT_LIGHT_COLOR,
                             &m.albedo.lerp(.{ .r = 1.0 }, t),
                             m.metallic,
                             m.roughness,
-                            1.0,
+                            0.03,
                         );
                         self.gpu_meshes.getPtr(.PathMarker).draw();
                     }
@@ -312,11 +336,14 @@ pub const App = struct {
                     &camera.view,
                     &camera.projection,
                     &model,
-                    &.{ .x = 2.0, .y = 0.0, .z = 4.0 },
+                    &LIGHTS_POSITION,
+                    &LIGHTS_COLOR,
+                    &DIRECT_LIGHT_DIRECTION,
+                    &DIRECT_LIGHT_COLOR,
                     &.{ .x = 1.0, .y = 0.0, .z = 0.0 },
                     0.0,
                     0.0,
-                    1.0,
+                    0.03,
                 );
                 self.cube.draw();
             }

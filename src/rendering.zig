@@ -117,10 +117,14 @@ pub const MeshShader = struct {
     camera_pos_loc: i32,
     lights_pos_loc: i32,
     lights_color_loc: i32,
+    direct_light_direction: i32,
+    direct_light_color: i32,
     albedo_loc: i32,
     metallic_loc: i32,
     roughness_loc: i32,
     ao_loc: i32,
+
+    pub const NUM_LIGHTS = 4;
 
     const Self = @This();
 
@@ -136,10 +140,12 @@ pub const MeshShader = struct {
         const camera_pos_loc = shader.get_uniform_location("camera_position");
         const lights_pos_loc = shader.get_uniform_location("light_positions");
         const lights_color_loc = shader.get_uniform_location("light_colors");
+        const direct_light_direction = shader.get_uniform_location("direct_light_direction");
+        const direct_light_color = shader.get_uniform_location("direct_light_color");
         const albedo_loc = shader.get_uniform_location("albedo");
         const metallic_loc = shader.get_uniform_location("metallic");
         const roughness_loc = shader.get_uniform_location("roughness");
-        const ao_loc = shader.get_uniform_location("ao_loc");
+        const ao_loc = shader.get_uniform_location("ao");
 
         return .{
             .shader = shader,
@@ -149,6 +155,8 @@ pub const MeshShader = struct {
             .camera_pos_loc = camera_pos_loc,
             .lights_pos_loc = lights_pos_loc,
             .lights_color_loc = lights_color_loc,
+            .direct_light_direction = direct_light_direction,
+            .direct_light_color = direct_light_color,
             .albedo_loc = albedo_loc,
             .metallic_loc = metallic_loc,
             .roughness_loc = roughness_loc,
@@ -162,7 +170,10 @@ pub const MeshShader = struct {
         camera_view: *const math.Mat4,
         camera_projection: *const math.Mat4,
         model: *const math.Mat4,
-        light_position: *const math.Vec3,
+        lights_position: *const [NUM_LIGHTS]math.Vec3,
+        lights_color: *const [NUM_LIGHTS]math.Color3,
+        direct_light_direction: *const math.Vec3,
+        direct_light_color: *const math.Color3,
         albedo: *const math.Color4,
         metallic: f32,
         roughness: f32,
@@ -173,9 +184,20 @@ pub const MeshShader = struct {
         gl.glUniformMatrix4fv(self.projection_loc, 1, gl.GL_FALSE, @ptrCast(camera_projection));
         gl.glUniformMatrix4fv(self.model_loc, 1, gl.GL_FALSE, @ptrCast(model));
         gl.glUniform3f(self.camera_pos_loc, camera_position.x, camera_position.y, camera_position.z);
-        gl.glUniform3fv(self.lights_pos_loc, 1, @ptrCast(light_position));
-        const c = math.Vec3.ONE;
-        gl.glUniform3fv(self.lights_color_loc, 1, @ptrCast(&c));
+        gl.glUniform3fv(self.lights_pos_loc, NUM_LIGHTS, @ptrCast(lights_position));
+        gl.glUniform3fv(self.lights_color_loc, NUM_LIGHTS, @ptrCast(lights_color));
+        gl.glUniform3f(
+            self.direct_light_direction,
+            direct_light_direction.x,
+            direct_light_direction.y,
+            direct_light_direction.z,
+        );
+        gl.glUniform3f(
+            self.direct_light_color,
+            direct_light_color.r,
+            direct_light_color.g,
+            direct_light_color.b,
+        );
         gl.glUniform3f(self.albedo_loc, albedo.r, albedo.g, albedo.b);
         gl.glUniform1f(self.metallic_loc, metallic);
         gl.glUniform1f(self.roughness_loc, roughness);

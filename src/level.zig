@@ -262,7 +262,6 @@ pub fn update_enemies_paths(self: *Self) void {
     while (iter.next()) |enemy| {
         const new_path = self.find_path(enemy.current_xy);
         enemy.update_path(new_path);
-        log.info(@src(), "Enemy: {} found new path: {}", .{ enemy, new_path != null });
     }
 }
 
