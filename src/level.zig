@@ -26,7 +26,7 @@ const Self = @This();
 pub const SPAWNS = 4;
 pub const ENEMIES = 32;
 pub const THRONES = 4;
-pub const PATHS = SPAWNS + ENEMIES;
+pub const PATHS = ENEMIES;
 
 pub const WIDTH = 32;
 pub const HEIGHT = 32;
@@ -132,7 +132,7 @@ pub const Cell = union(CellType) {
 pub fn init(self: *Self, scratch_alloc: Allocator, gpa_alloc: Allocator) void {
     self.scratch_alloc = scratch_alloc;
     self.path_allocator = .init(
-        gpa_alloc.alignedAlloc(u8, @alignOf(XY), @sizeOf(XY) * PATHS * WIDTH * HEIGHT) catch unreachable,
+        gpa_alloc.alignedAlloc(u8, @alignOf(XY), 10 * @sizeOf(XY) * PATHS * WIDTH * HEIGHT) catch unreachable,
     );
 
     const default_path = "resources/level.json";
