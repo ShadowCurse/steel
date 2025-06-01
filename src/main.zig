@@ -231,148 +231,16 @@ pub const App = struct {
                     @intFromFloat(@floor(mouse_xy.y)),
                 );
         }
-        // self.level.move_enemy_along_the_path(dt);
         self.level.run_spawns(dt);
         self.level.update_enemies(dt);
 
-        self.draw_imgui();
+        self.prepare_imgui_frame();
 
         gl.glClearDepth(0.0);
         gl.glClearColor(0.0, 0.0, 0.0, 1.0);
         gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT);
 
-        for (0..Level.WIDTH) |x| {
-            for (0..Level.HEIGHT) |y| {
-                const cell = self.level.cells[x][y];
-                switch (cell) {
-                    .None => {},
-                    else => {
-                        const model_type = Level.cell_to_model_type(cell);
-                        const p = Level.xy_to_vec3(.{ .x = @intCast(x), .y = @intCast(y) });
-                        const model = math.Mat4.IDENDITY.translate(p);
-
-                        const m = self.materials.getPtr(model_type);
-                        var albedo = m.albedo;
-                        if (self.selected_item) |si| {
-                            switch (si) {
-                                .CellXY => |xy| {
-                                    if (xy.x == x and xy.y == y) {
-                                        self.selected_item_time += dt;
-                                        const t = @abs(@sin(self.selected_item_time * 2.0));
-                                        albedo = Self.HILIGHT_COLOR.lerp(albedo, t);
-                                    }
-                                },
-                                else => {},
-                            }
-                        }
-                        self.mesh_shader.setup(
-                            &camera.position,
-                            &camera.view,
-                            &camera.projection,
-                            &model,
-                            &LIGHTS_POSITION,
-                            &LIGHTS_COLOR,
-                            &DIRECT_LIGHT_DIRECTION,
-                            &DIRECT_LIGHT_COLOR,
-                            &albedo,
-                            m.metallic,
-                            m.roughness,
-                            0.03,
-                        );
-                        self.gpu_meshes.getPtr(model_type).draw();
-                    },
-                }
-            }
-        }
-
-        var iter = self.level.enemies.iterator();
-        while (iter.next()) |enemy| {
-            {
-                const transform = math.Mat4.IDENDITY.translate(enemy.position);
-                const m = self.materials.getPtr(.Enemy);
-
-                var albedo = m.albedo;
-                if (self.selected_item) |si| {
-                    switch (si) {
-                        .Enemy => |e| {
-                            if (enemy == e) {
-                                self.selected_item_time += dt;
-                                const t = @abs(@sin(self.selected_item_time * 2.0));
-                                albedo = Self.HILIGHT_COLOR.lerp(albedo, t);
-                            }
-                        },
-                        else => {},
-                    }
-                }
-
-                self.mesh_shader.setup(
-                    &camera.position,
-                    &camera.view,
-                    &camera.projection,
-                    &transform,
-                    &LIGHTS_POSITION,
-                    &LIGHTS_COLOR,
-                    &DIRECT_LIGHT_DIRECTION,
-                    &DIRECT_LIGHT_COLOR,
-                    &albedo,
-                    m.metallic,
-                    m.roughness,
-                    0.03,
-                );
-                self.gpu_meshes.getPtr(.Enemy).draw();
-            }
-
-            if (enemy.show_path) {
-                if (enemy.path) |path| {
-                    for (path, 0..) |xy, i| {
-                        const p = Level.xy_to_vec3(xy);
-                        const model = math.Mat4.IDENDITY.translate(p);
-
-                        const m = self.materials.getPtr(.PathMarker);
-                        const t = @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(path.len));
-                        self.mesh_shader.setup(
-                            &camera.position,
-                            &camera.view,
-                            &camera.projection,
-                            &model,
-                            &LIGHTS_POSITION,
-                            &LIGHTS_COLOR,
-                            &DIRECT_LIGHT_DIRECTION,
-                            &DIRECT_LIGHT_COLOR,
-                            &m.albedo.lerp(.{ .r = 1.0 }, t),
-                            m.metallic,
-                            m.roughness,
-                            0.03,
-                        );
-                        self.gpu_meshes.getPtr(.PathMarker).draw();
-                    }
-                }
-            }
-        }
-
-        if (false) {
-            if (self.mouse_closest_t) |t| {
-                const p = mouse_ray.at_t(t);
-                const model = math.Mat4.IDENDITY
-                    .translate(p).scale(.{ .x = 0.2, .y = 0.2, .z = 0.2 });
-
-                self.mesh_shader.setup(
-                    &camera.position,
-                    &camera.view,
-                    &camera.projection,
-                    &model,
-                    &LIGHTS_POSITION,
-                    &LIGHTS_COLOR,
-                    &DIRECT_LIGHT_DIRECTION,
-                    &DIRECT_LIGHT_COLOR,
-                    &.{ .x = 1.0, .y = 0.0, .z = 0.0 },
-                    0.0,
-                    0.0,
-                    0.03,
-                );
-                self.cube.draw();
-            }
-        }
+        self.draw_level(camera, dt);
 
         if (self.show_grid) {
             self.debug_grid_shader.setup(
@@ -481,7 +349,118 @@ pub const App = struct {
         }
     }
 
-    pub fn draw_imgui(self: *Self) void {
+    pub fn draw_level(self: *Self, camera: *const Camera, dt: f32) void {
+        for (0..Level.WIDTH) |x| {
+            for (0..Level.HEIGHT) |y| {
+                const cell = self.level.cells[x][y];
+                switch (cell) {
+                    .None => {},
+                    else => {
+                        const model_type = Level.cell_to_model_type(cell);
+                        const p = Level.xy_to_vec3(.{ .x = @intCast(x), .y = @intCast(y) });
+                        const model = math.Mat4.IDENDITY.translate(p);
+
+                        const m = self.materials.getPtrConst(model_type);
+                        var albedo = m.albedo;
+                        if (self.selected_item) |si| {
+                            switch (si) {
+                                .CellXY => |xy| {
+                                    if (xy.x == x and xy.y == y) {
+                                        self.selected_item_time += dt;
+                                        const t = @abs(@sin(self.selected_item_time * 2.0));
+                                        albedo = Self.HILIGHT_COLOR.lerp(albedo, t);
+                                    }
+                                },
+                                else => {},
+                            }
+                        }
+                        self.mesh_shader.setup(
+                            &camera.position,
+                            &camera.view,
+                            &camera.projection,
+                            &model,
+                            &LIGHTS_POSITION,
+                            &LIGHTS_COLOR,
+                            &DIRECT_LIGHT_DIRECTION,
+                            &DIRECT_LIGHT_COLOR,
+                            &albedo,
+                            m.metallic,
+                            m.roughness,
+                            0.03,
+                        );
+                        self.gpu_meshes.getPtrConst(model_type).draw();
+                    },
+                }
+            }
+        }
+
+        var iter = self.level.enemies.iterator();
+        while (iter.next()) |enemy| {
+            {
+                const transform = math.Mat4.IDENDITY.translate(enemy.position);
+                const m = self.materials.getPtrConst(.Enemy);
+
+                var albedo = m.albedo;
+                if (self.selected_item) |si| {
+                    switch (si) {
+                        .Enemy => |e| {
+                            if (enemy == e) {
+                                self.selected_item_time += dt;
+                                const t = @abs(@sin(self.selected_item_time * 2.0));
+                                albedo = Self.HILIGHT_COLOR.lerp(albedo, t);
+                            }
+                        },
+                        else => {},
+                    }
+                }
+
+                self.mesh_shader.setup(
+                    &camera.position,
+                    &camera.view,
+                    &camera.projection,
+                    &transform,
+                    &LIGHTS_POSITION,
+                    &LIGHTS_COLOR,
+                    &DIRECT_LIGHT_DIRECTION,
+                    &DIRECT_LIGHT_COLOR,
+                    &albedo,
+                    m.metallic,
+                    m.roughness,
+                    0.03,
+                );
+                self.gpu_meshes.getPtrConst(.Enemy).draw();
+            }
+
+            if (enemy.show_path) {
+                if (enemy.path) |path| {
+                    for (path, 0..) |xy, i| {
+                        const p = Level.xy_to_vec3(xy);
+                        const model = math.Mat4.IDENDITY.translate(p);
+
+                        const m = self.materials.getPtrConst(.PathMarker);
+                        const t = @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(path.len));
+                        self.mesh_shader.setup(
+                            &camera.position,
+                            &camera.view,
+                            &camera.projection,
+                            &model,
+                            &LIGHTS_POSITION,
+                            &LIGHTS_COLOR,
+                            &DIRECT_LIGHT_DIRECTION,
+                            &DIRECT_LIGHT_COLOR,
+                            &m.albedo.lerp(.{ .r = 1.0 }, t),
+                            m.metallic,
+                            m.roughness,
+                            0.03,
+                        );
+                        self.gpu_meshes.getPtrConst(.PathMarker).draw();
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn prepare_imgui_frame(self: *Self) void {
         var open: bool = true;
 
         cimgui.ImGui_ImplOpenGL3_NewFrame();
