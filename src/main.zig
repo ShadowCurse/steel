@@ -231,7 +231,7 @@ pub const App = struct {
                     @intFromFloat(@floor(mouse_xy.y)),
                 );
         }
-        self.level.run_spawns(dt);
+        self.level.spawn_enemies(dt);
         self.level.update_enemies(dt);
 
         self.prepare_imgui_frame();

@@ -227,7 +227,7 @@ pub fn xy_to_vec3(xy: XY) math.Vec3 {
     };
 }
 
-pub fn run_spawns(self: *Self, dt: f32) void {
+pub fn spawn_enemies(self: *Self, dt: f32) void {
     var iter = self.spawns.iterator();
     while (iter.next()) |spawn| {
         if (!spawn.active) continue;
