@@ -35,16 +35,27 @@ pub const DEFAULT_PACKED_ASSETS_PATH = "resources/packed.p";
 //   [all vertices]
 // )
 
-pub const Meshes = std.EnumArray(ModelType, Mesh);
-pub const Materials = std.EnumArray(ModelType, Material);
 pub const GpuMeshes = std.EnumArray(ModelType, GpuMesh);
+pub const Materials = std.EnumArray(ModelType, Material);
+pub const Meshes = std.EnumArray(ModelType, Mesh);
 
-pub fn gpu_meshes_from_meshes(meshes: *const Meshes) GpuMeshes {
-    var gpu_meshes: GpuMeshes = undefined;
+pub var gpu_meshes: GpuMeshes = undefined;
+pub var materials: Materials = undefined;
+pub var meshes: Meshes = undefined;
+
+const Self = @This();
+
+pub fn init(mem: []align(4096) const u8) !void {
+    const unpack_result = try unpack(mem);
+    gpu_meshes_from_meshes(&unpack_result.meshes);
+    materials = unpack_result.mats;
+    meshes = unpack_result.meshes;
+}
+
+fn gpu_meshes_from_meshes(m: *const Meshes) void {
     for (std.enums.values(ModelType)) |v| {
-        gpu_meshes.getPtr(v).* = GpuMesh.from_mesh(meshes.getPtrConst(v));
+        gpu_meshes.getPtr(v).* = GpuMesh.from_mesh(m.getPtrConst(v));
     }
-    return gpu_meshes;
 }
 
 pub const ModelType = enum {
@@ -69,7 +80,7 @@ pub const MeshInfo = extern struct {
 };
 
 pub const Packer = struct {
-    materials: std.EnumArray(ModelType, Material) = undefined,
+    mats: std.EnumArray(ModelType, Material) = undefined,
     mesh_infos: std.EnumArray(ModelType, MeshInfo) = undefined,
     indices: std.ArrayListUnmanaged(Mesh.Index) = .{},
     vertices: std.ArrayListUnmanaged(Mesh.Vertex) = .{},
@@ -108,7 +119,7 @@ pub const Packer = struct {
             return error.cgltf_too_many_materials;
 
         const material = &data.materials[0];
-        self.materials.getPtr(model_type).* = .{
+        self.mats.getPtr(model_type).* = .{
             .albedo = @bitCast(material.pbr_metallic_roughness.base_color_factor),
             .metallic = material.pbr_metallic_roughness.metallic_factor,
             .roughness = material.pbr_metallic_roughness.roughness_factor,
@@ -238,7 +249,7 @@ pub const Packer = struct {
         var arena_allocator = FixedArena.init(mem);
         const arena_alloc = arena_allocator.allocator();
 
-        _ = try arena_alloc.dupe(Material, &self.materials.values);
+        _ = try arena_alloc.dupe(Material, &self.mats.values);
         _ = try arena_alloc.dupe(MeshInfo, &self.mesh_infos.values);
         _ = try arena_alloc.dupe(Mesh.Index, self.indices.items);
         _ = try arena_alloc.dupe(Mesh.Vertex, self.vertices.items);
@@ -251,14 +262,14 @@ pub const Packer = struct {
 
 pub const UnpackedAssets = struct {
     meshes: Meshes,
-    materials: Materials,
+    mats: Materials,
 };
 pub fn unpack(mem: []align(4096) const u8) !UnpackedAssets {
     var mem_ptr: usize = @intFromPtr(mem.ptr);
 
-    var materials: []const Material = undefined;
-    materials.ptr = @ptrFromInt(mem_ptr);
-    materials.len = Materials.len;
+    var mats: []const Material = undefined;
+    mats.ptr = @ptrFromInt(mem_ptr);
+    mats.len = Materials.len;
 
     mem_ptr += @sizeOf(Material) * Materials.len;
     mem_ptr = memory.align_up(mem_ptr, @alignOf(MeshInfo));
@@ -286,8 +297,8 @@ pub fn unpack(mem: []align(4096) const u8) !UnpackedAssets {
     vertices.len = total_vertices_len;
 
     var result: UnpackedAssets = undefined;
-    for (materials, 0..) |material, i|
-        result.materials.values[i] = material;
+    for (mats, 0..) |material, i|
+        result.mats.values[i] = material;
 
     var index_offset: u32 = 0;
     var vertex_offset: u32 = 0;

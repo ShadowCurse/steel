@@ -1,20 +1,20 @@
 const std = @import("std");
 const log = @import("log.zig");
-const assets = @import("assets.zig");
 const memory = @import("memory.zig");
+const Assets = @import("assets.zig");
 
 const DebugAllocator = std.heap.DebugAllocator(.{});
 const RoundArena = memory.RoundArena;
 
-const ModelPathsType = std.EnumArray(assets.ModelType, [:0]const u8);
+const ModelPathsType = std.EnumArray(Assets.ModelType, [:0]const u8);
 const MODEL_PATHS = ModelPathsType.init(.{
-    .Floor = assets.DEFAULT_MESHES_DIR_PATH ++ "/floor.glb",
-    .Wall = assets.DEFAULT_MESHES_DIR_PATH ++ "/wall.glb",
-    .Spawn = assets.DEFAULT_MESHES_DIR_PATH ++ "/spawn.glb",
-    .Throne = assets.DEFAULT_MESHES_DIR_PATH ++ "/throne.glb",
-    .Enemy = assets.DEFAULT_MESHES_DIR_PATH ++ "/enemy.glb",
-    .PathMarker = assets.DEFAULT_MESHES_DIR_PATH ++ "/path_marker.glb",
-    .Crystal = assets.DEFAULT_MESHES_DIR_PATH ++ "/crystal.glb",
+    .Floor = Assets.DEFAULT_MESHES_DIR_PATH ++ "/floor.glb",
+    .Wall = Assets.DEFAULT_MESHES_DIR_PATH ++ "/wall.glb",
+    .Spawn = Assets.DEFAULT_MESHES_DIR_PATH ++ "/spawn.glb",
+    .Throne = Assets.DEFAULT_MESHES_DIR_PATH ++ "/throne.glb",
+    .Enemy = Assets.DEFAULT_MESHES_DIR_PATH ++ "/enemy.glb",
+    .PathMarker = Assets.DEFAULT_MESHES_DIR_PATH ++ "/path_marker.glb",
+    .Crystal = Assets.DEFAULT_MESHES_DIR_PATH ++ "/crystal.glb",
 });
 
 pub fn main() !void {
@@ -24,7 +24,7 @@ pub fn main() !void {
     var scratch_allocator = RoundArena.init(try gpa_alloc.alloc(u8, 1 << 20));
     const scratch_alloc = scratch_allocator.allocator();
 
-    var packer: assets.Packer = .{};
+    var packer: Assets.Packer = .{};
     for (0..ModelPathsType.len) |i| {
         const model_type = ModelPathsType.Indexer.keyForIndex(i);
         const path = MODEL_PATHS.values[i];
@@ -39,5 +39,5 @@ pub fn main() !void {
         };
     }
 
-    try packer.pack_and_write(gpa_alloc, assets.DEFAULT_PACKED_ASSETS_PATH);
+    try packer.pack_and_write(gpa_alloc, Assets.DEFAULT_PACKED_ASSETS_PATH);
 }

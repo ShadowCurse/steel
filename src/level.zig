@@ -2,7 +2,7 @@ const std = @import("std");
 const log = @import("log.zig");
 const cimgui = @import("bindings/cimgui.zig");
 const math = @import("math.zig");
-const assets = @import("assets.zig");
+const Assets = @import("assets.zig");
 const memory = @import("memory.zig");
 const RoundArena = memory.RoundArena;
 const Allocator = memory.Allocator;
@@ -19,6 +19,8 @@ spawns: ObjectPool(Spawn, SPAWNS) = .{},
 thrones: ObjectPool(Throne, THRONES) = .{},
 enemies: ObjectPool(Enemy, ENEMIES) = .{},
 floor_traps: ObjectPool(FloorTrap, FLOOR_TRAPS) = .{},
+
+current_crystals: u32 = 0,
 
 const Self = @This();
 
@@ -153,7 +155,7 @@ pub fn init(self: *Self, scratch_alloc: Allocator, gpa_alloc: Allocator) void {
     @memcpy(self.path[0..default_path.len], default_path);
 }
 
-pub fn cell_to_model_type(cell: Cell) assets.ModelType {
+pub fn cell_to_model_type(cell: Cell) Assets.ModelType {
     return switch (cell) {
         .None => log.panic(@src(), "Trying to convert cell of None type to model type", .{}),
         .Floor => |_| .Floor,

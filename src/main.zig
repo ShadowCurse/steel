@@ -6,7 +6,7 @@ const gl = @import("bindings/gl.zig");
 const cimgui = @import("bindings/cimgui.zig");
 
 const math = @import("math.zig");
-const assets = @import("assets.zig");
+const Assets = @import("assets.zig");
 const events = @import("events.zig");
 
 const rendering = @import("rendering.zig");
@@ -66,12 +66,8 @@ pub const App = struct {
 
     assets_file_mem: memory.FileMem = undefined,
 
-    materials: assets.Materials = undefined,
-    meshes: assets.Meshes = undefined,
-
     mesh_shader: MeshShader = undefined,
     cube: GpuMesh = undefined,
-    gpu_meshes: assets.GpuMeshes = undefined,
     debug_grid_shader: DebugGridShader = undefined,
     debug_grid: DebugGrid = undefined,
     debug_grid_scale: f32 = 10.0,
@@ -100,6 +96,7 @@ pub const App = struct {
     const HILIGHT_COLOR: math.Color4 = .{ .g = 1.0, .b = 1.0 };
 
     const InputMode = enum {
+        Game,
         Selection,
         Placement,
     };
@@ -133,16 +130,13 @@ pub const App = struct {
         self.scratch_allocator = scratch_allocator;
 
         self.assets_file_mem =
-            memory.FileMem.init(assets.DEFAULT_PACKED_ASSETS_PATH) catch unreachable;
+            memory.FileMem.init(Assets.DEFAULT_PACKED_ASSETS_PATH) catch unreachable;
+        Assets.init(self.assets_file_mem.mem) catch unreachable;
 
         const mesh_shader = MeshShader.init();
         const debug_grid_shader = DebugGridShader.init();
 
-        const unpack_result = assets.unpack(self.assets_file_mem.mem) catch unreachable;
-
         const cube = GpuMesh.init(Mesh.Vertex, Mesh.Cube.vertices, Mesh.Cube.indices);
-        const gpu_meshes = assets.gpu_meshes_from_meshes(&unpack_result.meshes);
-
         const debug_grid = DebugGrid.init();
 
         const floating_camera: Camera = .{ .position = .{ .y = -5.0, .z = 5.0 }, .pitch = -1.1 };
@@ -153,10 +147,7 @@ pub const App = struct {
         };
 
         self.mesh_shader = mesh_shader;
-        self.meshes = unpack_result.meshes;
-        self.materials = unpack_result.materials;
         self.cube = cube;
-        self.gpu_meshes = gpu_meshes;
         self.debug_grid_shader = debug_grid_shader;
         self.debug_grid = debug_grid;
         self.floating_camera = floating_camera;
@@ -234,7 +225,6 @@ pub const App = struct {
 
         const mouse_ray = camera.mouse_to_ray(mouse_clip);
         self.select_item(&mouse_ray);
-        self.damage_clicked_enemy(&mouse_ray);
 
         if (self.input_mode == .Placement) {
             if (self.lmb_now_pressed)
@@ -249,6 +239,7 @@ pub const App = struct {
                     @intFromFloat(@floor(mouse_xy.y)),
                 );
         }
+        self.damage_clicked_enemy(&mouse_ray);
         self.level.progress_traps(dt);
         self.level.spawn_enemies(dt);
         self.level.update_enemies(dt);
@@ -302,7 +293,7 @@ pub const App = struct {
                             .z = 0.0,
                         });
 
-                        const mesh = self.meshes.getPtr(model_type);
+                        const mesh = Assets.meshes.getPtr(model_type);
                         if (mesh.ray_intersection(&transform, mouse_ray)) |i| {
                             const xy: Level.XY = .{ .x = @intCast(x), .y = @intCast(y) };
                             if (self.mouse_closest_t) |cpt| {
@@ -325,10 +316,13 @@ pub const App = struct {
         self: *Self,
         mouse_ray: *const math.Ray,
     ) void {
+        if (self.input_mode != .Game)
+            return;
+
         if (!self.lmb_was_pressed)
             return;
 
-        const enemy_mesh = self.meshes.getPtr(.Enemy);
+        const enemy_mesh = Assets.meshes.getPtr(.Enemy);
         var mouse_closest_t: ?f32 = null;
         var clicked_enemy: ?*Level.Enemy = null;
         var it = self.level.enemies.iterator();
@@ -363,7 +357,7 @@ pub const App = struct {
                         const p = Level.xy_to_vec3(.{ .x = @intCast(x), .y = @intCast(y) });
                         const model = math.Mat4.IDENDITY.translate(p);
 
-                        const m = self.materials.getPtrConst(model_type);
+                        const m = Assets.materials.getPtrConst(model_type);
                         var albedo = m.albedo;
 
                         // quick hack to change color
@@ -404,7 +398,7 @@ pub const App = struct {
                             m.roughness,
                             0.03,
                         );
-                        self.gpu_meshes.getPtrConst(model_type).draw();
+                        Assets.gpu_meshes.getPtrConst(model_type).draw();
                     },
                 }
             }
@@ -414,7 +408,7 @@ pub const App = struct {
         while (iter.next()) |enemy| {
             {
                 const transform = math.Mat4.IDENDITY.translate(enemy.position);
-                const m = self.materials.getPtrConst(.Enemy);
+                const m = Assets.materials.getPtrConst(.Enemy);
 
                 const t =
                     @as(f32, @floatFromInt(enemy.hp)) /
@@ -435,7 +429,7 @@ pub const App = struct {
                     m.roughness,
                     0.03,
                 );
-                self.gpu_meshes.getPtrConst(.Enemy).draw();
+                Assets.gpu_meshes.getPtrConst(.Enemy).draw();
             }
 
             if (enemy.show_path) {
@@ -444,7 +438,7 @@ pub const App = struct {
                         const p = Level.xy_to_vec3(xy);
                         const model = math.Mat4.IDENDITY.translate(p);
 
-                        const m = self.materials.getPtrConst(.PathMarker);
+                        const m = Assets.materials.getPtrConst(.PathMarker);
                         const t = @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(path.len));
                         self.mesh_shader.setup(
                             &camera.position,
@@ -460,7 +454,7 @@ pub const App = struct {
                             m.roughness,
                             0.03,
                         );
-                        self.gpu_meshes.getPtrConst(.PathMarker).draw();
+                        Assets.gpu_meshes.getPtrConst(.PathMarker).draw();
                     }
                 }
             }
@@ -523,7 +517,7 @@ pub const App = struct {
         }
 
         if (cimgui.igCollapsingHeader_BoolPtr("Materials", &open, 0)) {
-            var iter = self.materials.iterator();
+            var iter = Assets.materials.iterator();
             while (iter.next()) |m| {
                 cimgui.igPushID_Int(cimgui_id);
                 cimgui_id += 1;
@@ -539,6 +533,8 @@ pub const App = struct {
             cimgui.ImGuiTreeNodeFlags_DefaultOpen,
         )) {
             _ = cimgui.igSeparatorText("Input mode");
+            if (cimgui.igSelectable_Bool("Game", self.input_mode == .Game, 0, .{}))
+                self.input_mode = .Game;
             if (cimgui.igSelectable_Bool("Selection", self.input_mode == .Selection, 0, .{}))
                 self.input_mode = .Selection;
             if (cimgui.igSelectable_Bool("Placement", self.input_mode == .Placement, 0, .{}))

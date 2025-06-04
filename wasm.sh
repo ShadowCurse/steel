@@ -24,6 +24,7 @@ emcc \
   -sASYNCIFY \
   --emrun \
   --embed-file resources@/resources \
+  -sERROR_ON_UNDEFINED_SYMBOLS=0 \
   ../zig-out/lib/* \
   ../../SDL/build/libSDL3.a \
   -o \
