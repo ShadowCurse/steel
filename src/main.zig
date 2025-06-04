@@ -80,8 +80,12 @@ pub const App = struct {
     topdown_camera: Camera = .{},
     use_topdown_camera: bool = false,
 
-    lmb_pressed: bool = false,
-    rmb_pressed: bool = false,
+    lmb_was_pressed: bool = false,
+    lmb_was_released: bool = false,
+    lmb_now_pressed: bool = false,
+    rmb_was_pressed: bool = false,
+    rmb_was_released: bool = false,
+    rmb_now_pressed: bool = false,
 
     level: Level = .{},
 
@@ -90,14 +94,10 @@ pub const App = struct {
     current_cell_type: Level.CellType = .Floor,
 
     mouse_closest_t: ?f32 = null,
-    selected_item: ?SelectedItem = null,
+    selected_item: ?Level.XY = null,
     selected_item_time: f32 = 0.0,
 
-    const SelectedItem = union(enum) {
-        CellXY: Level.XY,
-        Enemy: *Level.Enemy,
-    };
-
+    const CLICK_DAMAGE = 5;
     const HILIGHT_COLOR: math.Color4 = .{ .g = 1.0, .b = 1.0 };
 
     const InputMode = enum {
@@ -185,6 +185,10 @@ pub const App = struct {
             camera.velocity = .{};
         }
 
+        self.lmb_was_pressed = false;
+        self.lmb_was_released = false;
+        self.rmb_was_pressed = false;
+        self.rmb_was_released = false;
         for (new_events) |event| {
             camera.process_input(event, dt);
 
@@ -193,8 +197,14 @@ pub const App = struct {
                     switch (mouse) {
                         .Button => |button| {
                             switch (button.key) {
-                                .LMB => self.lmb_pressed = button.type == .Pressed,
-                                .RMB => self.rmb_pressed = button.type == .Pressed,
+                                .LMB => {
+                                    self.lmb_was_pressed = button.type == .Pressed;
+                                    self.lmb_was_released = button.type == .Released;
+                                },
+                                .RMB => {
+                                    self.rmb_was_pressed = button.type == .Pressed;
+                                    self.rmb_was_released = button.type == .Released;
+                                },
                                 else => {},
                             }
                         },
@@ -203,6 +213,14 @@ pub const App = struct {
                 },
                 else => {},
             }
+            if (self.lmb_was_pressed)
+                self.lmb_now_pressed = true;
+            if (self.lmb_was_released)
+                self.lmb_now_pressed = false;
+            if (self.rmb_was_pressed)
+                self.rmb_now_pressed = true;
+            if (self.rmb_was_released)
+                self.rmb_now_pressed = false;
         }
         camera.move(dt);
 
@@ -217,15 +235,16 @@ pub const App = struct {
 
         const mouse_ray = camera.mouse_to_ray(mouse_clip);
         self.select_item(&mouse_ray);
+        self.damage_clicked_enemy(&mouse_ray);
 
         if (self.input_mode == .Placement) {
-            if (self.lmb_pressed)
+            if (self.lmb_now_pressed)
                 self.level.set(
                     @intFromFloat(@floor(mouse_xy.x)),
                     @intFromFloat(@floor(mouse_xy.y)),
                     self.current_cell_type,
                 );
-            if (self.rmb_pressed)
+            if (self.rmb_now_pressed)
                 self.level.unset(
                     @intFromFloat(@floor(mouse_xy.x)),
                     @intFromFloat(@floor(mouse_xy.y)),
@@ -266,7 +285,7 @@ pub const App = struct {
         if (self.input_mode != .Selection)
             return;
 
-        if (!self.lmb_pressed)
+        if (!self.lmb_was_pressed)
             return;
 
         self.mouse_closest_t = null;
@@ -302,11 +321,11 @@ pub const App = struct {
                                 if (self.mouse_closest_t) |cpt| {
                                     if (i.t < cpt) {
                                         self.mouse_closest_t = i.t;
-                                        self.selected_item = .{ .CellXY = xy };
+                                        self.selected_item = xy;
                                     }
                                 } else {
                                     self.mouse_closest_t = i.t;
-                                    self.selected_item = .{ .CellXY = xy };
+                                    self.selected_item = xy;
                                 }
                                 break;
                             }
@@ -315,8 +334,18 @@ pub const App = struct {
                 }
             }
         }
+    }
+
+    pub fn damage_clicked_enemy(
+        self: *Self,
+        mouse_ray: *const math.Ray,
+    ) void {
+        if (!self.lmb_was_pressed)
+            return;
 
         const enemy_mesh = self.meshes.getPtr(.Enemy);
+        var mouse_closest_t: ?f32 = null;
+        var clicked_enemy: ?*Level.Enemy = null;
         var it = self.level.enemies.iterator();
         while (it.next()) |enemy| {
             var ti = enemy_mesh.triangle_iterator();
@@ -334,20 +363,21 @@ pub const App = struct {
                     mouse_ray,
                     &tt,
                 )) |i| {
-                    self.selected_item_time = 0.0;
-                    if (self.mouse_closest_t) |cpt| {
+                    if (mouse_closest_t) |cpt| {
                         if (i.t < cpt) {
-                            self.mouse_closest_t = i.t;
-                            self.selected_item = .{ .Enemy = enemy };
+                            mouse_closest_t = i.t;
+                            clicked_enemy = enemy;
                         }
                     } else {
-                        self.mouse_closest_t = i.t;
-                        self.selected_item = .{ .Enemy = enemy };
+                        mouse_closest_t = i.t;
+                        clicked_enemy = enemy;
                     }
                     break;
                 }
             }
         }
+        if (clicked_enemy) |enemy|
+            enemy.hp -= Self.CLICK_DAMAGE;
     }
 
     pub fn draw_level(self: *Self, camera: *const Camera, dt: f32) void {
@@ -381,16 +411,11 @@ pub const App = struct {
                             else => {},
                         }
 
-                        if (self.selected_item) |si| {
-                            switch (si) {
-                                .CellXY => |xy| {
-                                    if (xy.x == x and xy.y == y) {
-                                        self.selected_item_time += dt;
-                                        const t = @abs(@sin(self.selected_item_time * 2.0));
-                                        albedo = Self.HILIGHT_COLOR.lerp(albedo, t);
-                                    }
-                                },
-                                else => {},
+                        if (self.selected_item) |xy| {
+                            if (xy.x == x and xy.y == y) {
+                                self.selected_item_time += dt;
+                                const t = @abs(@sin(self.selected_item_time * 2.0));
+                                albedo = Self.HILIGHT_COLOR.lerp(albedo, t);
                             }
                         }
                         self.mesh_shader.setup(
@@ -419,24 +444,10 @@ pub const App = struct {
                 const transform = math.Mat4.IDENDITY.translate(enemy.position);
                 const m = self.materials.getPtrConst(.Enemy);
 
-                var albedo = m.albedo;
-                if (self.selected_item) |si| {
-                    switch (si) {
-                        .Enemy => |e| {
-                            if (enemy == e) {
-                                self.selected_item_time += dt;
-                                const t = @abs(@sin(self.selected_item_time * 2.0));
-                                albedo = Self.HILIGHT_COLOR.lerp(albedo, t);
-                            }
-                        },
-                        else => {},
-                    }
-                } else {
-                    const t =
-                        @as(f32, @floatFromInt(enemy.hp)) /
-                        @as(f32, @floatFromInt(enemy.max_hp));
-                    albedo = Level.Enemy.NO_HP_COLOR.lerp(albedo, t);
-                }
+                const t =
+                    @as(f32, @floatFromInt(enemy.hp)) /
+                    @as(f32, @floatFromInt(enemy.max_hp));
+                const albedo = Level.Enemy.NO_HP_COLOR.lerp(m.albedo, t);
 
                 self.mesh_shader.setup(
                     &camera.position,
@@ -500,6 +511,13 @@ pub const App = struct {
             _ = cimgui.igSeparatorText("Mouse");
             _ = cimgui.igValue_Uint("x", Platform.mouse_position.x);
             _ = cimgui.igValue_Uint("y", Platform.mouse_position.y);
+
+            _ = cimgui.igValue_Bool("lmb_was_pressed", self.lmb_was_pressed);
+            _ = cimgui.igValue_Bool("lmb_was_released", self.lmb_was_released);
+            _ = cimgui.igValue_Bool("lmb_now_pressed", self.lmb_now_pressed);
+            _ = cimgui.igValue_Bool("rmb_was_pressed", self.rmb_was_pressed);
+            _ = cimgui.igValue_Bool("rmb_was_released", self.rmb_was_released);
+            _ = cimgui.igValue_Bool("rmb_now_pressed", self.rmb_now_pressed);
         }
 
         if (cimgui.igCollapsingHeader_BoolPtr("Camera", &open, 0)) {

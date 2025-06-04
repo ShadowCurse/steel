@@ -301,7 +301,6 @@ pub fn damage_enemy(self: *Self, enemy: *Enemy) void {
             } else {
                 enemy.was_hit = false;
             }
-            enemy.finished = enemy.hp <= 0;
         },
         else => {},
     }
@@ -312,7 +311,7 @@ pub fn update_enemies(self: *Self, dt: f32) void {
     while (iter.next()) |enemy| {
         enemy.move(dt);
         self.damage_enemy(enemy);
-        if (enemy.finished) {
+        if (enemy.finished or enemy.hp <= 0) {
             self.enemies.free(enemy);
         }
     }
