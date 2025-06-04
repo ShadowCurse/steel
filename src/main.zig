@@ -239,10 +239,13 @@ pub const App = struct {
                     @intFromFloat(@floor(mouse_xy.y)),
                 );
         }
-        self.damage_clicked_enemy(&mouse_ray);
-        self.level.progress_traps(dt);
-        self.level.spawn_enemies(dt);
-        self.level.update_enemies(dt);
+
+        if (self.input_mode == .Game) {
+            self.damage_clicked_enemy(&mouse_ray);
+            self.level.progress_traps(dt);
+            self.level.spawn_enemies(dt);
+            self.level.update_enemies(dt);
+        }
 
         self.prepare_imgui_frame();
 
@@ -377,11 +380,13 @@ pub const App = struct {
                             else => {},
                         }
 
-                        if (self.selected_item) |xy| {
-                            if (xy.x == x and xy.y == y) {
-                                self.selected_item_time += dt;
-                                const t = @abs(@sin(self.selected_item_time * 2.0));
-                                albedo = Self.HILIGHT_COLOR.lerp(albedo, t);
+                        if (self.input_mode != .Game) {
+                            if (self.selected_item) |xy| {
+                                if (xy.x == x and xy.y == y) {
+                                    self.selected_item_time += dt;
+                                    const t = @abs(@sin(self.selected_item_time * 2.0));
+                                    albedo = Self.HILIGHT_COLOR.lerp(albedo, t);
+                                }
                             }
                         }
                         self.mesh_shader.setup(
