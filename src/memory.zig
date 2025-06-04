@@ -236,13 +236,18 @@ pub fn ObjectPool(comptime T: type, comptime N: u32) type {
                     break :blk self.array.addOne() catch return null;
                 };
 
-            if (self.last_node) |last_node|
+            if (self.last_node) |last_node| {
                 last_node.next = new_node;
-            new_node.prev = self.last_node;
+                new_node.prev = last_node;
+            } else {
+                new_node.prev = null;
+            }
             self.last_node = new_node;
 
-            if (self.first_node == null)
+            if (self.first_node == null) {
                 self.first_node = new_node;
+            }
+            new_node.next = null;
 
             return &new_node.value;
         }
@@ -320,12 +325,10 @@ test "ObjectPool_simple_iter" {
         os[i] = o;
     }
 
-    {
-        var iter = op.iterator();
-        var i: usize = 0;
-        while (iter.next()) |o| : (i += 1) {
-            try std.testing.expect(o.* == i);
-        }
+    var iter = op.iterator();
+    var i: usize = 0;
+    while (iter.next()) |o| : (i += 1) {
+        try std.testing.expect(o.* == i);
     }
 }
 
@@ -338,25 +341,23 @@ test "ObjectPool_free_alloc_0" {
         o.* = i;
         os[i] = o;
     }
+    op.free(os[0]);
     {
-        op.free(os[0]);
-        {
-            const expected = [_]usize{ 1, 2, 3, 4, 5, 6, 7 };
-            var iter = op.iterator();
-            var i: usize = 0;
-            while (iter.next()) |o| : (i += 1) {
-                try std.testing.expect(o.* == expected[i]);
-            }
+        const expected = [_]usize{ 1, 2, 3, 4, 5, 6, 7 };
+        var iter = op.iterator();
+        var i: usize = 0;
+        while (iter.next()) |o| : (i += 1) {
+            try std.testing.expect(o.* == expected[i]);
         }
-        os[0] = op.alloc().?;
-        os[0].* = 0;
-        {
-            const expected = [_]usize{ 1, 2, 3, 4, 5, 6, 7, 0 };
-            var iter = op.iterator();
-            var i: usize = 0;
-            while (iter.next()) |o| : (i += 1) {
-                try std.testing.expect(o.* == expected[i]);
-            }
+    }
+    os[0] = op.alloc().?;
+    os[0].* = 0;
+    {
+        const expected = [_]usize{ 1, 2, 3, 4, 5, 6, 7, 0 };
+        var iter = op.iterator();
+        var i: usize = 0;
+        while (iter.next()) |o| : (i += 1) {
+            try std.testing.expect(o.* == expected[i]);
         }
     }
 }
@@ -370,25 +371,23 @@ test "ObjectPool_free_alloc_5" {
         o.* = i;
         os[i] = o;
     }
+    op.free(os[5]);
     {
-        op.free(os[5]);
-        {
-            const expected = [_]usize{ 0, 1, 2, 3, 4, 6, 7 };
-            var iter = op.iterator();
-            var i: usize = 0;
-            while (iter.next()) |o| : (i += 1) {
-                try std.testing.expect(o.* == expected[i]);
-            }
+        const expected = [_]usize{ 0, 1, 2, 3, 4, 6, 7 };
+        var iter = op.iterator();
+        var i: usize = 0;
+        while (iter.next()) |o| : (i += 1) {
+            try std.testing.expect(o.* == expected[i]);
         }
-        os[5] = op.alloc().?;
-        os[5].* = 5;
-        {
-            const expected = [_]usize{ 0, 1, 2, 3, 4, 6, 7, 5 };
-            var iter = op.iterator();
-            var i: usize = 0;
-            while (iter.next()) |o| : (i += 1) {
-                try std.testing.expect(o.* == expected[i]);
-            }
+    }
+    os[5] = op.alloc().?;
+    os[5].* = 5;
+    {
+        const expected = [_]usize{ 0, 1, 2, 3, 4, 6, 7, 5 };
+        var iter = op.iterator();
+        var i: usize = 0;
+        while (iter.next()) |o| : (i += 1) {
+            try std.testing.expect(o.* == expected[i]);
         }
     }
 }
@@ -402,26 +401,85 @@ test "ObjectPool_free_alloc_7" {
         o.* = i;
         os[i] = o;
     }
+    op.free(os[7]);
     {
-        op.free(os[7]);
-        {
-            const expected = [_]usize{ 0, 1, 2, 3, 4, 5, 6 };
-            var iter = op.iterator();
-            var i: usize = 0;
-            while (iter.next()) |o| : (i += 1) {
-                try std.testing.expect(o.* == expected[i]);
-            }
+        const expected = [_]usize{ 0, 1, 2, 3, 4, 5, 6 };
+        var iter = op.iterator();
+        var i: usize = 0;
+        while (iter.next()) |o| : (i += 1) {
+            try std.testing.expect(o.* == expected[i]);
         }
+    }
 
-        os[7] = op.alloc().?;
-        os[7].* = 7;
-        {
-            const expected = [_]usize{ 0, 1, 2, 3, 4, 5, 6, 7 };
-            var iter = op.iterator();
-            var i: usize = 0;
-            while (iter.next()) |o| : (i += 1) {
-                try std.testing.expect(o.* == expected[i]);
-            }
+    os[7] = op.alloc().?;
+    os[7].* = 7;
+    {
+        const expected = [_]usize{ 0, 1, 2, 3, 4, 5, 6, 7 };
+        var iter = op.iterator();
+        var i: usize = 0;
+        while (iter.next()) |o| : (i += 1) {
+            try std.testing.expect(o.* == expected[i]);
+        }
+    }
+}
+
+test "ObjectPool_free_in_iter" {
+    var op = ObjectPool(usize, 8){};
+
+    var os: [8]*usize = undefined;
+    for (0..5) |i| {
+        const o = op.alloc().?;
+        o.* = i;
+        os[i] = o;
+    }
+    {
+        var iter = op.iterator();
+        var i: usize = 0;
+        while (iter.next()) |o| : (i += 1) {
+            if (o.* == 1) op.free(o);
+        }
+    }
+    {
+        const expected = [_]usize{ 0, 2, 3, 4 };
+        var iter = op.iterator();
+        var i: usize = 0;
+        while (iter.next()) |o| : (i += 1) {
+            try std.testing.expect(o.* == expected[i]);
+        }
+    }
+}
+
+test "ObjectPool_no_inf_chain" {
+    var op = ObjectPool(usize, 8){};
+
+    var os: [8]*usize = undefined;
+    for (0..5) |i| {
+        const o = op.alloc().?;
+        o.* = i;
+        os[i] = o;
+    }
+    {
+        var iter = op.iterator();
+        var i: usize = 0;
+        while (iter.next()) |o| : (i += 1) {
+            if (o.* == 1 or o.* == 2) op.free(o);
+        }
+    }
+    {
+        const expected = [_]usize{ 0, 3, 4 };
+        var iter = op.iterator();
+        var i: usize = 0;
+        while (iter.next()) |o| : (i += 1) {
+            try std.testing.expect(o.* == expected[i]);
+        }
+    }
+    op.alloc().?.* = 25;
+    {
+        const expected = [_]usize{ 0, 3, 4, 25 };
+        var iter = op.iterator();
+        var i: usize = 0;
+        while (iter.next()) |o| : (i += 1) {
+            try std.testing.expect(o.* == expected[i]);
         }
     }
 }
