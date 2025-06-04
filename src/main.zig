@@ -561,6 +561,8 @@ pub const App = struct {
                     self.current_cell_type = .Spawn;
                 if (cimgui.igSelectable_Bool("Throne", self.current_cell_type == .Throne, 0, .{}))
                     self.current_cell_type = .Throne;
+                if (cimgui.igSelectable_Bool("Crystal", self.current_cell_type == .Crystal, 0, .{}))
+                    self.current_cell_type = .Crystal;
             }
         }
 

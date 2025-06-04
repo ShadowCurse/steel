@@ -14,13 +14,14 @@ const MODEL_PATHS = ModelPathsType.init(.{
     .Throne = assets.DEFAULT_MESHES_DIR_PATH ++ "/throne.glb",
     .Enemy = assets.DEFAULT_MESHES_DIR_PATH ++ "/enemy.glb",
     .PathMarker = assets.DEFAULT_MESHES_DIR_PATH ++ "/path_marker.glb",
+    .Crystal = assets.DEFAULT_MESHES_DIR_PATH ++ "/crystal.glb",
 });
 
 pub fn main() !void {
     var gpa = DebugAllocator{};
     const gpa_alloc = gpa.allocator();
 
-    var scratch_allocator = RoundArena.init(try gpa_alloc.alloc(u8, 4096));
+    var scratch_allocator = RoundArena.init(try gpa_alloc.alloc(u8, 1 << 20));
     const scratch_alloc = scratch_allocator.allocator();
 
     var packer: assets.Packer = .{};

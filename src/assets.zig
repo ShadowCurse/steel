@@ -54,6 +54,7 @@ pub const ModelType = enum {
     Throne,
     Enemy,
     PathMarker,
+    Crystal,
 };
 
 pub const Material = struct {

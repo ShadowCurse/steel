@@ -125,6 +125,7 @@ pub const CellType = enum {
     Wall,
     Spawn,
     Throne,
+    Crystal,
 };
 
 pub const Cell = union(CellType) {
@@ -134,6 +135,7 @@ pub const Cell = union(CellType) {
     Wall: void,
     Spawn: *Spawn,
     Throne: *Throne,
+    Crystal: void,
 };
 
 pub fn init(self: *Self, scratch_alloc: Allocator, gpa_alloc: Allocator) void {
@@ -154,6 +156,7 @@ pub fn cell_to_model_type(cell: Cell) assets.ModelType {
         .Wall => |_| .Wall,
         .Spawn => |_| .Spawn,
         .Throne => |_| .Throne,
+        .Crystal => |_| .Crystal,
     };
 }
 
@@ -223,6 +226,7 @@ pub fn set(self: *Self, x: i32, y: i32, cell_type: CellType) void {
                 .{@as(u32, THRONES)},
             );
         },
+        .Crystal => cell.* = .{.Crystal = {}},
     }
     self.update_enemies_paths();
 }
