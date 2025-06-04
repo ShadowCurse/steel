@@ -431,6 +431,11 @@ pub const App = struct {
                         },
                         else => {},
                     }
+                } else {
+                    const t =
+                        @as(f32, @floatFromInt(enemy.hp)) /
+                        @as(f32, @floatFromInt(enemy.max_hp));
+                    albedo = Level.Enemy.NO_HP_COLOR.lerp(albedo, t);
                 }
 
                 self.mesh_shader.setup(

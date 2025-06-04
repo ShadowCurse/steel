@@ -71,12 +71,15 @@ pub const Enemy = struct {
     finished: bool = false,
 
     speed: f32 = 1.0,
-    hp: i32 = 10,
+    hp: i32 = 20,
+    max_hp: i32 = 20,
     damage: i32 = 10,
 
     was_hit: bool = false,
 
     show_path: bool = false,
+
+    pub const NO_HP_COLOR: math.Color4 = .{ .r = 1.0, .a = 1.0 };
 
     pub fn init(path: []XY) Enemy {
         return .{
@@ -226,7 +229,7 @@ pub fn set(self: *Self, x: i32, y: i32, cell_type: CellType) void {
                 .{@as(u32, THRONES)},
             );
         },
-        .Crystal => cell.* = .{.Crystal = {}},
+        .Crystal => cell.* = .{ .Crystal = {} },
     }
     self.update_enemies_paths();
 }
@@ -290,9 +293,11 @@ pub fn damage_enemy(self: *Self, enemy: *Enemy) void {
     const enemy_cell = self.cells[enemy.current_xy.x][enemy.current_xy.y];
     switch (enemy_cell) {
         .FloorTrap => |ft| {
-            if (ft.active and !enemy.was_hit) {
-                enemy.hp -= ft.damage;
-                enemy.was_hit = true;
+            if (ft.active) {
+                if (!enemy.was_hit) {
+                    enemy.hp -= ft.damage;
+                    enemy.was_hit = true;
+                }
             } else {
                 enemy.was_hit = false;
             }
