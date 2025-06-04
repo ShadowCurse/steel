@@ -55,6 +55,25 @@ pub const TriangleIterator = struct {
     }
 };
 
+pub fn ray_intersection(
+    self: *const Self,
+    transform: *const math.Mat4,
+    ray: *const math.Ray,
+) ?math.TriangleIntersectionResult {
+    var ti = self.triangle_iterator();
+    while (ti.next()) |t| {
+        const tt = t.translate(transform);
+
+        const is_ccw = math.triangle_ccw(ray.direction, &tt);
+        if (!is_ccw)
+            continue;
+
+        if (math.triangle_ray_intersect(ray, &tt)) |intersection|
+            return intersection;
+    }
+    return null;
+}
+
 pub const Cube = Self{
     .indices = &.{
         1,

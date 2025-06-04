@@ -97,7 +97,6 @@ pub const App = struct {
     selected_item: ?Level.XY = null,
     selected_item_time: f32 = 0.0,
 
-    const CLICK_DAMAGE = 5;
     const HILIGHT_COLOR: math.Color4 = .{ .g = 1.0, .b = 1.0 };
 
     const InputMode = enum {
@@ -304,30 +303,16 @@ pub const App = struct {
                         });
 
                         const mesh = self.meshes.getPtr(model_type);
-                        var ti = mesh.triangle_iterator();
-                        while (ti.next()) |t| {
-                            const tt = t.translate(&transform);
-
-                            const is_ccw = math.triangle_ccw(mouse_ray.direction, &tt);
-                            if (!is_ccw)
-                                continue;
-
-                            if (math.triangle_ray_intersect(
-                                mouse_ray,
-                                &tt,
-                            )) |i| {
-                                self.selected_item_time = 0.0;
-                                const xy: Level.XY = .{ .x = @intCast(x), .y = @intCast(y) };
-                                if (self.mouse_closest_t) |cpt| {
-                                    if (i.t < cpt) {
-                                        self.mouse_closest_t = i.t;
-                                        self.selected_item = xy;
-                                    }
-                                } else {
+                        if (mesh.ray_intersection(&transform, mouse_ray)) |i| {
+                            const xy: Level.XY = .{ .x = @intCast(x), .y = @intCast(y) };
+                            if (self.mouse_closest_t) |cpt| {
+                                if (i.t < cpt) {
                                     self.mouse_closest_t = i.t;
                                     self.selected_item = xy;
                                 }
-                                break;
+                            } else {
+                                self.mouse_closest_t = i.t;
+                                self.selected_item = xy;
                             }
                         }
                     },
@@ -348,36 +333,23 @@ pub const App = struct {
         var clicked_enemy: ?*Level.Enemy = null;
         var it = self.level.enemies.iterator();
         while (it.next()) |enemy| {
-            var ti = enemy_mesh.triangle_iterator();
-            while (ti.next()) |t| {
-                const transform = math.Mat4.IDENDITY
-                    .translate(enemy.position);
+            const transform = math.Mat4.IDENDITY
+                .translate(enemy.position);
 
-                const tt = t.translate(&transform);
-
-                const is_ccw = math.triangle_ccw(mouse_ray.direction, &tt);
-                if (!is_ccw)
-                    continue;
-
-                if (math.triangle_ray_intersect(
-                    mouse_ray,
-                    &tt,
-                )) |i| {
-                    if (mouse_closest_t) |cpt| {
-                        if (i.t < cpt) {
-                            mouse_closest_t = i.t;
-                            clicked_enemy = enemy;
-                        }
-                    } else {
+            if (enemy_mesh.ray_intersection(&transform, mouse_ray)) |i| {
+                if (mouse_closest_t) |cpt| {
+                    if (i.t < cpt) {
                         mouse_closest_t = i.t;
                         clicked_enemy = enemy;
                     }
-                    break;
+                } else {
+                    mouse_closest_t = i.t;
+                    clicked_enemy = enemy;
                 }
             }
         }
         if (clicked_enemy) |enemy|
-            enemy.hp -= Self.CLICK_DAMAGE;
+            enemy.hp -= Level.CLICK_DAMAGE;
     }
 
     pub fn draw_level(self: *Self, camera: *const Camera, dt: f32) void {

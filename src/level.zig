@@ -22,6 +22,8 @@ floor_traps: ObjectPool(FloorTrap, FLOOR_TRAPS) = .{},
 
 const Self = @This();
 
+pub const CLICK_DAMAGE = 5;
+
 pub const SPAWNS = 4;
 pub const ENEMIES = 32;
 pub const THRONES = 4;
