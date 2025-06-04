@@ -231,6 +231,7 @@ pub const App = struct {
                     @intFromFloat(@floor(mouse_xy.y)),
                 );
         }
+        self.level.progress_traps(dt);
         self.level.spawn_enemies(dt);
         self.level.update_enemies(dt);
 
@@ -362,6 +363,24 @@ pub const App = struct {
 
                         const m = self.materials.getPtrConst(model_type);
                         var albedo = m.albedo;
+
+                        // quick hack to change color
+                        switch (cell) {
+                            .FloorTrap => |ft| {
+                                if (!ft.active)
+                                    albedo = albedo.lerp(
+                                        .{ .r = 0.9, .g = 0.45, .b = 0.05, .a = 1.0 },
+                                        1.0 - ft.activate_time_remaining / ft.activate_time,
+                                    )
+                                else
+                                    albedo = albedo.lerp(
+                                        .{ .r = 1.0, .a = 1.0 },
+                                        1.0 - ft.active_time_remaining / ft.active_time,
+                                    );
+                            },
+                            else => {},
+                        }
+
                         if (self.selected_item) |si| {
                             switch (si) {
                                 .CellXY => |xy| {
@@ -534,6 +553,8 @@ pub const App = struct {
                 _ = cimgui.igSeparatorText("Cell type");
                 if (cimgui.igSelectable_Bool("Floor", self.current_cell_type == .Floor, 0, .{}))
                     self.current_cell_type = .Floor;
+                if (cimgui.igSelectable_Bool("FloorTrap", self.current_cell_type == .FloorTrap, 0, .{}))
+                    self.current_cell_type = .FloorTrap;
                 if (cimgui.igSelectable_Bool("Wall", self.current_cell_type == .Wall, 0, .{}))
                     self.current_cell_type = .Wall;
                 if (cimgui.igSelectable_Bool("Spawn", self.current_cell_type == .Spawn, 0, .{}))

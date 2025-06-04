@@ -18,14 +18,14 @@ cells: [Self.WIDTH][Self.HEIGHT]Cell = .{.{Cell{ .None = {} }} ** Self.HEIGHT} *
 spawns: ObjectPool(Spawn, SPAWNS) = .{},
 thrones: ObjectPool(Throne, THRONES) = .{},
 enemies: ObjectPool(Enemy, ENEMIES) = .{},
-
-selected_object: SelectedObject = .None,
+floor_traps: ObjectPool(FloorTrap, FLOOR_TRAPS) = .{},
 
 const Self = @This();
 
 pub const SPAWNS = 4;
 pub const ENEMIES = 32;
 pub const THRONES = 4;
+pub const FLOOR_TRAPS = 32;
 pub const PATHS = ENEMIES;
 
 pub const WIDTH = 32;
@@ -41,13 +41,6 @@ pub const LIMITS: math.Vec4 = .{
     .w = BOT,
 };
 
-pub const SelectedObject = union(enum) {
-    None: void,
-    Spawn: *Spawn,
-    Throne: *Throne,
-    Enemy: *Enemy,
-};
-
 pub const Spawn = struct {
     xy: XY = .{},
     spawn_time: f32 = 1.0,
@@ -61,6 +54,16 @@ pub const Throne = struct {
     hp: i32 = 100,
 };
 
+pub const FloorTrap = struct {
+    xy: XY = .{},
+    damage: i32 = 10,
+    activate_time: f32 = 2.0,
+    activate_time_remaining: f32 = 2.0,
+    active: bool = false,
+    active_time: f32 = 0.2,
+    active_time_remaining: f32 = 0.2,
+};
+
 pub const Enemy = struct {
     position: math.Vec3 = .{},
     path: ?[]XY = null,
@@ -70,6 +73,8 @@ pub const Enemy = struct {
     speed: f32 = 1.0,
     hp: i32 = 10,
     damage: i32 = 10,
+
+    was_hit: bool = false,
 
     show_path: bool = false,
 
@@ -116,6 +121,7 @@ pub const XY = packed struct(u16) { x: u8 = 0, y: u8 = 0 };
 pub const CellType = enum {
     None,
     Floor,
+    FloorTrap,
     Wall,
     Spawn,
     Throne,
@@ -124,6 +130,7 @@ pub const CellType = enum {
 pub const Cell = union(CellType) {
     None: void,
     Floor: void,
+    FloorTrap: *FloorTrap,
     Wall: void,
     Spawn: *Spawn,
     Throne: *Throne,
@@ -143,6 +150,7 @@ pub fn cell_to_model_type(cell: Cell) assets.ModelType {
     return switch (cell) {
         .None => log.panic(@src(), "Trying to convert cell of None type to model type", .{}),
         .Floor => |_| .Floor,
+        .FloorTrap => |_| .Floor,
         .Wall => |_| .Wall,
         .Spawn => |_| .Spawn,
         .Throne => |_| .Throne,
@@ -167,12 +175,9 @@ fn free_cell(self: *Self, xy: XY) void {
     const cell = &self.cells[xy.x][xy.y];
     if (std.meta.activeTag(cell.*) != .None) {
         switch (cell.*) {
-            .Spawn => |spawn| {
-                self.spawns.free(spawn);
-            },
-            .Throne => |throne| {
-                self.thrones.free(throne);
-            },
+            .FloorTrap => |ft| self.floor_traps.free(ft),
+            .Spawn => |spawn| self.spawns.free(spawn),
+            .Throne => |throne| self.thrones.free(throne),
             else => {},
         }
     }
@@ -184,6 +189,17 @@ pub fn set(self: *Self, x: i32, y: i32, cell_type: CellType) void {
     switch (cell_type) {
         .None => cell.* = .{ .None = {} },
         .Floor => cell.* = .{ .Floor = {} },
+        .FloorTrap => {
+            if (self.floor_traps.alloc()) |new_ft| {
+                new_ft.* = .{ .xy = xy };
+                self.free_cell(xy);
+                cell.* = .{ .FloorTrap = new_ft };
+            } else log.warn(
+                @src(),
+                "Cannot place any more floor traps. MAX is {d}",
+                .{@as(u32, FLOOR_TRAPS)},
+            );
+        },
         .Wall => cell.* = .{ .Wall = {} },
         .Spawn => {
             if (self.spawns.alloc()) |new_spawn| {
@@ -227,6 +243,25 @@ pub fn xy_to_vec3(xy: XY) math.Vec3 {
     };
 }
 
+pub fn progress_traps(self: *Self, dt: f32) void {
+    var iter = self.floor_traps.iterator();
+    while (iter.next()) |ft| {
+        if (ft.active) {
+            ft.active_time_remaining -= dt;
+            if (ft.active_time_remaining <= 0.0) {
+                ft.active_time_remaining = ft.active_time;
+                ft.active = false;
+            }
+        } else {
+            ft.activate_time_remaining -= dt;
+            if (ft.activate_time_remaining <= 0.0) {
+                ft.activate_time_remaining = ft.activate_time;
+                ft.active = true;
+            }
+        }
+    }
+}
+
 pub fn spawn_enemies(self: *Self, dt: f32) void {
     var iter = self.spawns.iterator();
     while (iter.next()) |spawn| {
@@ -247,10 +282,27 @@ pub fn spawn_enemies(self: *Self, dt: f32) void {
     }
 }
 
+pub fn damage_enemy(self: *Self, enemy: *Enemy) void {
+    const enemy_cell = self.cells[enemy.current_xy.x][enemy.current_xy.y];
+    switch (enemy_cell) {
+        .FloorTrap => |ft| {
+            if (ft.active and !enemy.was_hit) {
+                enemy.hp -= ft.damage;
+                enemy.was_hit = true;
+            } else {
+                enemy.was_hit = false;
+            }
+            enemy.finished = enemy.hp <= 0;
+        },
+        else => {},
+    }
+}
+
 pub fn update_enemies(self: *Self, dt: f32) void {
     var iter = self.enemies.iterator();
     while (iter.next()) |enemy| {
         enemy.move(dt);
+        self.damage_enemy(enemy);
         if (enemy.finished) {
             self.enemies.free(enemy);
         }
@@ -275,7 +327,9 @@ const Item = packed struct(u32) {
 };
 fn valid_path_cell(self: *const Self, xy: XY) bool {
     const cell_type = std.meta.activeTag(self.cells[xy.x][xy.y]);
-    return cell_type == .Floor or cell_type == .Throne;
+    return cell_type == .Floor or
+        cell_type == .FloorTrap or
+        cell_type == .Throne;
 }
 pub fn find_path(self: *Self, start_xy: XY) ?[]XY {
     var to_explore: std.PriorityQueue(Item, void, Item.cmp) = .init(self.scratch_alloc, void{});
