@@ -29,6 +29,8 @@ const Camera = @import("camera.zig");
 const Platform = @import("platform.zig");
 const BoundedArray = std.BoundedArray;
 
+const Input = @import("input.zig");
+
 pub const log_options = log.Options{
     .level = .Info,
     .colors = builtin.target.os.tag != .emscripten,
@@ -75,13 +77,6 @@ pub const App = struct {
     floating_camera: Camera = .{},
     topdown_camera: Camera = .{},
     use_topdown_camera: bool = false,
-
-    lmb_was_pressed: bool = false,
-    lmb_was_released: bool = false,
-    lmb_now_pressed: bool = false,
-    rmb_was_pressed: bool = false,
-    rmb_was_released: bool = false,
-    rmb_now_pressed: bool = false,
 
     level: Level = .{},
 
@@ -175,42 +170,10 @@ pub const App = struct {
             camera.velocity = .{};
         }
 
-        self.lmb_was_pressed = false;
-        self.lmb_was_released = false;
-        self.rmb_was_pressed = false;
-        self.rmb_was_released = false;
+        Input.update(new_events);
+
         for (new_events) |event| {
             camera.process_input(event, dt);
-
-            switch (event) {
-                .Mouse => |mouse| {
-                    switch (mouse) {
-                        .Button => |button| {
-                            switch (button.key) {
-                                .LMB => {
-                                    self.lmb_was_pressed = button.type == .Pressed;
-                                    self.lmb_was_released = button.type == .Released;
-                                },
-                                .RMB => {
-                                    self.rmb_was_pressed = button.type == .Pressed;
-                                    self.rmb_was_released = button.type == .Released;
-                                },
-                                else => {},
-                            }
-                        },
-                        else => {},
-                    }
-                },
-                else => {},
-            }
-            if (self.lmb_was_pressed)
-                self.lmb_now_pressed = true;
-            if (self.lmb_was_released)
-                self.lmb_now_pressed = false;
-            if (self.rmb_was_pressed)
-                self.rmb_now_pressed = true;
-            if (self.rmb_was_released)
-                self.rmb_now_pressed = false;
         }
         camera.move(dt);
 
@@ -227,13 +190,13 @@ pub const App = struct {
         self.select_item(&mouse_ray);
 
         if (self.input_mode == .Placement) {
-            if (self.lmb_now_pressed)
+            if (Input.lmb_now_pressed)
                 self.level.set(
                     @intFromFloat(@floor(mouse_xy.x)),
                     @intFromFloat(@floor(mouse_xy.y)),
                     self.current_cell_type,
                 );
-            if (self.rmb_now_pressed)
+            if (Input.rmb_now_pressed)
                 self.level.unset(
                     @intFromFloat(@floor(mouse_xy.x)),
                     @intFromFloat(@floor(mouse_xy.y)),
@@ -278,7 +241,7 @@ pub const App = struct {
         if (self.input_mode != .Selection)
             return;
 
-        if (!self.lmb_was_pressed)
+        if (!Input.lmb_was_pressed)
             return;
 
         self.mouse_closest_t = null;
@@ -322,7 +285,7 @@ pub const App = struct {
         if (self.input_mode != .Game)
             return;
 
-        if (!self.lmb_was_pressed)
+        if (!Input.lmb_was_pressed)
             return;
 
         const enemy_mesh = Assets.meshes.getPtr(.Enemy);
@@ -483,12 +446,7 @@ pub const App = struct {
             _ = cimgui.igValue_Uint("x", Platform.mouse_position.x);
             _ = cimgui.igValue_Uint("y", Platform.mouse_position.y);
 
-            _ = cimgui.igValue_Bool("lmb_was_pressed", self.lmb_was_pressed);
-            _ = cimgui.igValue_Bool("lmb_was_released", self.lmb_was_released);
-            _ = cimgui.igValue_Bool("lmb_now_pressed", self.lmb_now_pressed);
-            _ = cimgui.igValue_Bool("rmb_was_pressed", self.rmb_was_pressed);
-            _ = cimgui.igValue_Bool("rmb_was_released", self.rmb_was_released);
-            _ = cimgui.igValue_Bool("rmb_now_pressed", self.rmb_now_pressed);
+            Input.imgui_info();
         }
 
         if (cimgui.igCollapsingHeader_BoolPtr("Camera", &open, 0)) {
