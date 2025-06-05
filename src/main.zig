@@ -84,7 +84,6 @@ pub const App = struct {
     show_grid: bool = true,
     current_cell_type: Level.CellType = .Floor,
 
-    mouse_closest_t: ?f32 = null,
     selected_item: ?Level.XY = null,
     selected_item_time: f32 = 0.0,
 
@@ -187,7 +186,7 @@ pub const App = struct {
         const mouse_xy = camera.mouse_to_xy(mouse_clip);
 
         const mouse_ray = camera.mouse_to_ray(mouse_clip);
-        self.select_item(&mouse_ray);
+        self.select_cell(&mouse_ray);
 
         if (self.input_mode == .Placement) {
             if (Input.lmb_now_pressed)
@@ -234,7 +233,7 @@ pub const App = struct {
         cimgui.ImGui_ImplOpenGL3_RenderDrawData(imgui_data);
     }
 
-    pub fn select_item(
+    pub fn select_cell(
         self: *Self,
         mouse_ray: *const math.Ray,
     ) void {
@@ -244,71 +243,17 @@ pub const App = struct {
         if (!Input.lmb_was_pressed)
             return;
 
-        self.mouse_closest_t = null;
-        for (0..Level.WIDTH) |x| {
-            for (0..Level.HEIGHT) |y| {
-                const cell = self.level.cells[x][y];
-                switch (cell) {
-                    .None => {},
-                    else => {
-                        const model_type = Level.cell_to_model_type(cell);
-                        const transform = math.Mat4.IDENDITY
-                            .translate(.{
-                            .x = @as(f32, @floatFromInt(x)) + 0.5 - Level.RIGHT,
-                            .y = @as(f32, @floatFromInt(y)) + 0.5 - Level.TOP,
-                            .z = 0.0,
-                        });
-
-                        const mesh = Assets.meshes.getPtr(model_type);
-                        if (mesh.ray_intersection(&transform, mouse_ray)) |i| {
-                            const xy: Level.XY = .{ .x = @intCast(x), .y = @intCast(y) };
-                            if (self.mouse_closest_t) |cpt| {
-                                if (i.t < cpt) {
-                                    self.mouse_closest_t = i.t;
-                                    self.selected_item = xy;
-                                }
-                            } else {
-                                self.mouse_closest_t = i.t;
-                                self.selected_item = xy;
-                            }
-                        }
-                    },
-                }
-            }
-        }
+        self.selected_item = self.level.hovered_cell(mouse_ray);
     }
 
     pub fn damage_clicked_enemy(
         self: *Self,
         mouse_ray: *const math.Ray,
     ) void {
-        if (self.input_mode != .Game)
-            return;
-
         if (!Input.lmb_was_pressed)
             return;
 
-        const enemy_mesh = Assets.meshes.getPtr(.Enemy);
-        var mouse_closest_t: ?f32 = null;
-        var clicked_enemy: ?*Level.Enemy = null;
-        var it = self.level.enemies.iterator();
-        while (it.next()) |enemy| {
-            const transform = math.Mat4.IDENDITY
-                .translate(enemy.position);
-
-            if (enemy_mesh.ray_intersection(&transform, mouse_ray)) |i| {
-                if (mouse_closest_t) |cpt| {
-                    if (i.t < cpt) {
-                        mouse_closest_t = i.t;
-                        clicked_enemy = enemy;
-                    }
-                } else {
-                    mouse_closest_t = i.t;
-                    clicked_enemy = enemy;
-                }
-            }
-        }
-        if (clicked_enemy) |enemy|
+        if (self.level.hovered_enemy(mouse_ray)) |enemy|
             enemy.hp -= Level.CLICK_DAMAGE;
     }
 

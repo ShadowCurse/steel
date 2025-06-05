@@ -445,6 +445,70 @@ pub fn find_path(self: *Self, start_xy: XY) ?[]XY {
     return null;
 }
 
+pub fn hovered_cell(self: *Self, ray: *const math.Ray) ?XY {
+    var mouse_closest_t: ?f32 = null;
+    var h_xy: ?XY = null;
+    for (0..Self.WIDTH) |x| {
+        for (0..Self.HEIGHT) |y| {
+            const cell = self.cells[x][y];
+            switch (cell) {
+                .None => {},
+                else => {
+                    const model_type = Self.cell_to_model_type(cell);
+                    const transform = math.Mat4.IDENDITY
+                        .translate(.{
+                        .x = @as(f32, @floatFromInt(x)) + 0.5 - Self.RIGHT,
+                        .y = @as(f32, @floatFromInt(y)) + 0.5 - Self.TOP,
+                        .z = 0.0,
+                    });
+
+                    const mesh = Assets.meshes.getPtr(model_type);
+                    if (mesh.ray_intersection(&transform, ray)) |i| {
+                        const xy: XY = .{ .x = @intCast(x), .y = @intCast(y) };
+                        if (mouse_closest_t) |cpt| {
+                            if (i.t < cpt) {
+                                mouse_closest_t = i.t;
+                                h_xy = xy;
+                            }
+                        } else {
+                            mouse_closest_t = i.t;
+                            h_xy = xy;
+                        }
+                    }
+                },
+            }
+        }
+    }
+    return h_xy;
+}
+
+pub fn hovered_enemy(
+    self: *Self,
+    ray: *const math.Ray,
+) ?*Enemy {
+    const enemy_mesh = Assets.meshes.getPtr(.Enemy);
+    var mouse_closest_t: ?f32 = null;
+    var h_enemy: ?*Enemy = null;
+    var it = self.enemies.iterator();
+    while (it.next()) |enemy| {
+        const transform = math.Mat4.IDENDITY
+            .translate(enemy.position);
+
+        if (enemy_mesh.ray_intersection(&transform, ray)) |i| {
+            if (mouse_closest_t) |cpt| {
+                if (i.t < cpt) {
+                    mouse_closest_t = i.t;
+                    h_enemy = enemy;
+                }
+            } else {
+                mouse_closest_t = i.t;
+                h_enemy = enemy;
+            }
+        }
+    }
+    return h_enemy;
+}
+
 pub fn reset(self: *Self) void {
     self.spawns.reset();
     self.thrones.reset();
