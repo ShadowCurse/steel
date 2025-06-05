@@ -9,6 +9,7 @@ const RoundArena = memory.RoundArena;
 const ModelPathsType = std.EnumArray(Assets.ModelType, [:0]const u8);
 const MODEL_PATHS = ModelPathsType.init(.{
     .Floor = Assets.DEFAULT_MESHES_DIR_PATH ++ "/floor.glb",
+    .FloorTrap = Assets.DEFAULT_MESHES_DIR_PATH ++ "/floor_trap.glb",
     .Wall = Assets.DEFAULT_MESHES_DIR_PATH ++ "/wall.glb",
     .Spawn = Assets.DEFAULT_MESHES_DIR_PATH ++ "/spawn.glb",
     .Throne = Assets.DEFAULT_MESHES_DIR_PATH ++ "/throne.glb",

@@ -60,6 +60,7 @@ fn gpu_meshes_from_meshes(m: *const Meshes) void {
 
 pub const ModelType = enum {
     Floor,
+    FloorTrap,
     Wall,
     Spawn,
     Throne,

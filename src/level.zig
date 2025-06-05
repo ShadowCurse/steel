@@ -157,7 +157,7 @@ pub fn cell_to_model_type(cell: Cell) Assets.ModelType {
     return switch (cell) {
         .None => log.panic(@src(), "Trying to convert cell of None type to model type", .{}),
         .Floor => |_| .Floor,
-        .FloorTrap => |_| .Floor,
+        .FloorTrap => |_| .FloorTrap,
         .Wall => |_| .Wall,
         .Spawn => |_| .Spawn,
         .Throne => |_| .Throne,
