@@ -20,8 +20,6 @@ thrones: ObjectPool(Throne, THRONES) = .{},
 enemies: ObjectPool(Enemy, ENEMIES) = .{},
 floor_traps: ObjectPool(FloorTrap, FLOOR_TRAPS) = .{},
 
-current_crystals: u32 = 0,
-
 const Self = @This();
 
 pub const CLICK_DAMAGE = 5;
@@ -179,6 +177,10 @@ pub fn in_range(x: i32, y: i32) ?XY {
         return null
     else
         return .{ .x = @intCast(x + RIGHT), .y = @intCast(y + TOP) };
+}
+
+pub fn get_cell(self: *Self, xy: XY) *Cell {
+    return &self.cells[xy.x][xy.y];
 }
 
 fn free_cell(self: *Self, xy: XY) void {
