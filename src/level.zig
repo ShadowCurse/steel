@@ -72,10 +72,10 @@ pub const Enemy = struct {
     current_xy: XY = .{},
     finished: bool = false,
 
-    speed: f32 = 1.0,
+    speed: f32 = 5.0,
     hp: i32 = 20,
     max_hp: i32 = 20,
-    damage: i32 = 10,
+    damage: i32 = 50,
 
     was_hit: bool = false,
 
@@ -193,6 +193,7 @@ fn free_cell(self: *Self, xy: XY) void {
             else => {},
         }
     }
+    cell.* = .{ .None = {} };
 }
 
 pub fn set(self: *Self, x: i32, y: i32, cell_type: CellType) void {
@@ -312,12 +313,30 @@ pub fn damage_enemy(self: *Self, enemy: *Enemy) void {
     }
 }
 
+pub fn damage_throne(self: *Self, enemy: *const Enemy) void {
+    var it = self.thrones.iterator();
+    while (it.next()) |throne| {
+        if (enemy.current_xy == throne.xy) {
+            throne.hp -= enemy.damage;
+
+            if (throne.hp <= 0) {
+                self.free_cell(throne.xy);
+                self.update_enemies_paths();
+            }
+        }
+    }
+}
+
 pub fn update_enemies(self: *Self, dt: f32) void {
     var iter = self.enemies.iterator();
     while (iter.next()) |enemy| {
         enemy.move(dt);
         self.damage_enemy(enemy);
-        if (enemy.finished or enemy.hp <= 0) {
+
+        if (enemy.finished) {
+            self.damage_throne(enemy);
+            self.enemies.free(enemy);
+        } else if (enemy.hp <= 0) {
             self.enemies.free(enemy);
         }
     }

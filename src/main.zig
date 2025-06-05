@@ -80,6 +80,7 @@ pub const App = struct {
 
     level: Level = .{},
     current_crystals: u32 = 0,
+    lost: bool = false,
 
     input_mode: InputMode = .Selection,
     show_grid: bool = true,
@@ -206,6 +207,7 @@ pub const App = struct {
         if (self.input_mode == .Game) {
             self.damage_clicked_enemy(&mouse_ray);
             self.collect_crystals();
+            self.check_thrones();
             self.level.progress_traps(dt);
             self.level.spawn_enemies(dt);
             self.level.update_enemies(dt);
@@ -269,6 +271,10 @@ pub const App = struct {
                 else => {},
             }
         }
+    }
+
+    pub fn check_thrones(self: *Self) void {
+        self.lost = self.level.thrones.empty();
     }
 
     pub fn draw_level(self: *Self, camera: *const Camera, dt: f32) void {
@@ -396,18 +402,26 @@ pub const App = struct {
         cimgui.igNewFrame();
         defer cimgui.igRender();
 
+        var cimgui_id: i32 = 0;
+        {
+            _ = cimgui.igBegin("Game info", &open, 0);
+            defer cimgui.igEnd();
+
+            _ = cimgui.igValue_Bool("lost", self.lost);
+            _ = cimgui.igValue_Uint("crystals", self.current_crystals);
+
+            var it = self.level.thrones.const_iterator();
+            while (it.next()) |throne| {
+                cimgui.igPushID_Int(cimgui_id);
+                cimgui_id += 1;
+                defer cimgui.igPopID();
+
+                _ = cimgui.igValue_Int("thone hp", throne.hp);
+            }
+        }
+
         _ = cimgui.igBegin("options", &open, 0);
         defer cimgui.igEnd();
-
-        var cimgui_id: i32 = 0;
-
-        if (cimgui.igCollapsingHeader_BoolPtr(
-            "Game resources",
-            &open,
-            cimgui.ImGuiTreeNodeFlags_DefaultOpen,
-        )) {
-            _ = cimgui.igValue_Uint("crystals", self.current_crystals);
-        }
 
         if (cimgui.igCollapsingHeader_BoolPtr("Mouse info", &open, 0)) {
             _ = cimgui.igSeparatorText("Mouse");

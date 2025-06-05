@@ -214,6 +214,10 @@ pub fn ObjectPool(comptime T: type, comptime N: u32) type {
             self.* = .{};
         }
 
+        pub fn empty(self: *const Self) bool {
+            return self.first_node == null;
+        }
+
         pub fn full(self: *const Self) bool {
             return self.free_list == null and self.array.buffer.len == self.array.capacity();
         }
