@@ -82,6 +82,7 @@ pub const App = struct {
     current_crystals: u32 = 0,
     lost: bool = false,
 
+    game_mode: GameMode = .Paused,
     input_mode: InputMode = .Selection,
     show_grid: bool = true,
     current_cell_type: Level.CellType = .Floor,
@@ -90,6 +91,11 @@ pub const App = struct {
     selected_item_time: f32 = 0.0,
 
     const HILIGHT_COLOR: math.Color4 = .{ .g = 1.0, .b = 1.0 };
+
+    const GameMode = enum {
+        Paused,
+        Running,
+    };
 
     const InputMode = enum {
         Game,
@@ -204,7 +210,7 @@ pub const App = struct {
                 );
         }
 
-        if (self.input_mode == .Game) {
+        if (self.game_mode == .Running) {
             self.damage_clicked_enemy(&mouse_ray);
             self.collect_crystals();
             self.check_thrones();
@@ -477,6 +483,12 @@ pub const App = struct {
             &open,
             cimgui.ImGuiTreeNodeFlags_DefaultOpen,
         )) {
+            _ = cimgui.igSeparatorText("Game mode");
+            if (cimgui.igSelectable_Bool("Running", self.game_mode == .Running, 0, .{}))
+                self.game_mode = .Running;
+            if (cimgui.igSelectable_Bool("Paused", self.game_mode == .Paused, 0, .{}))
+                self.game_mode = .Paused;
+
             _ = cimgui.igSeparatorText("Input mode");
             if (cimgui.igSelectable_Bool("Game", self.input_mode == .Game, 0, .{}))
                 self.input_mode = .Game;
