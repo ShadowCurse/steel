@@ -17,6 +17,10 @@ const MODEL_PATHS = ModelPathsType.init(.{
     .PathMarker = Assets.DEFAULT_MESHES_DIR_PATH ++ "/path_marker.glb",
     .Crystal = Assets.DEFAULT_MESHES_DIR_PATH ++ "/crystal.glb",
 });
+const FontPathsType = std.EnumArray(Assets.FontType, struct { [:0]const u8, f32 });
+const FONT_PATHS = FontPathsType.init(.{
+    .Default = .{ Assets.DEFAULT_FONTS_DIR_PATH ++ "/Roboto-Regular.ttf", 32.0 },
+});
 
 pub fn main() !void {
     var gpa = DebugAllocator{};
@@ -37,6 +41,20 @@ pub fn main() !void {
             model_type,
         ) catch |e| {
             log.err(@src(), "Error loading model from path: {s}: {}", .{ path, e });
+        };
+    }
+    for (0..FontPathsType.len) |i| {
+        const font_type = FontPathsType.Indexer.keyForIndex(i);
+        const t = FONT_PATHS.values[i];
+
+        packer.add_font(
+            gpa_alloc,
+            scratch_alloc,
+            t[0],
+            t[1],
+            font_type,
+        ) catch |e| {
+            log.err(@src(), "Error loading font from path: {s}: {}", .{ t[0], e });
         };
     }
 

@@ -47,6 +47,7 @@ pub fn build(b: *std.Build) !void {
     artifact.addIncludePath(.{ .cwd_relative = env_map.get("SDL3_INCLUDE_PATH").? });
     artifact.addIncludePath(.{ .cwd_relative = env_map.get("LIBGL_INCLUDE_PATH").? });
     artifact.addIncludePath(b.path("thirdparty/cimgui"));
+    artifact.addIncludePath(b.path("thirdparty/stb/"));
     artifact.linkLibC();
     artifact.linkLibrary(cimgui);
     b.installArtifact(artifact);
@@ -65,7 +66,9 @@ pub fn build(b: *std.Build) !void {
             .optimize = optimize,
         });
         asset_packer.addIncludePath(b.path("thirdparty/cgltf/"));
+        asset_packer.addIncludePath(b.path("thirdparty/stb/"));
         asset_packer.addCSourceFile(.{ .file = b.path("thirdparty/cgltf/cgltf.c") });
+        asset_packer.addCSourceFile(.{ .file = b.path("thirdparty/stb/stb.c") });
         asset_packer.linkLibC();
 
         b.installArtifact(asset_packer);
