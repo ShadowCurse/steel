@@ -12,3 +12,4 @@ zig-out/
 /wasm/steel.wasm
 /wasm/resources/*
 imgui.ini
+/resources/packed.p
