@@ -3,8 +3,104 @@ const builtin = @import("builtin");
 const log = @import("log.zig");
 const gl = @import("bindings/gl.zig");
 const math = @import("math.zig");
+const assets = @import("assets.zig");
+
+const Level = @import("level.zig");
+const Camera = @import("camera.zig");
+
 const FileMem = @import("memory.zig").FileMem;
 const Mesh = @import("mesh.zig");
+
+pub const Environment = struct {
+    lights_position: [MeshShader.NUM_LIGHTS]math.Vec3,
+    lights_color: [MeshShader.NUM_LIGHTS]math.Color3,
+    direct_light_direction: math.Vec3,
+    direct_light_color: math.Color3,
+};
+
+pub const Renderer = struct {
+    mesh_shader: MeshShader,
+    mesh_infos: std.BoundedArray(RenderMeshInfo, 128) = .{},
+
+    // debug things
+    show_debug_grid: bool = true,
+    debug_grid_scale: f32 = 10.0,
+    debug_grid_shader: DebugGridShader = undefined,
+    debug_grid: DebugGrid = undefined,
+
+    const RenderMeshInfo = struct {
+        mesh: *const GpuMesh,
+        model: math.Mat4,
+        material: assets.Material,
+    };
+
+    const Self = @This();
+
+    pub fn init() Self {
+        return .{
+            .mesh_shader = .init(),
+            .debug_grid_shader = .init(),
+            .debug_grid = .init(),
+        };
+    }
+
+    pub fn reset(self: *Self) void {
+        self.mesh_infos.clear();
+
+        gl.glClearDepth(0.0);
+        gl.glClearColor(0.0, 0.0, 0.0, 1.0);
+        gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT);
+    }
+
+    pub fn add_mesh_draw(
+        self: *Self,
+        mesh: *const GpuMesh,
+        model: math.Mat4,
+        material: assets.Material,
+    ) void {
+        const mesh_info = RenderMeshInfo{
+            .mesh = mesh,
+            .model = model,
+            .material = material,
+        };
+        self.mesh_infos.append(mesh_info) catch {
+            log.warn(@src(), "Cannot add more meshes to draw queue", .{});
+        };
+    }
+
+    pub fn render(
+        self: *const Self,
+        camera: *const Camera,
+        environment: *const Environment,
+    ) void {
+        self.mesh_shader.use();
+        self.mesh_shader.set_scene_params(
+            &camera.view,
+            &camera.position,
+            &camera.projection,
+            &environment.lights_position,
+            &environment.lights_color,
+            &environment.direct_light_direction,
+            &environment.direct_light_color,
+        );
+        for (self.mesh_infos.slice()) |*mi| {
+            self.mesh_shader.set_mesh_params(&mi.model, &mi.material);
+            mi.mesh.draw();
+        }
+
+        if (self.show_debug_grid) {
+            self.debug_grid_shader.setup(
+                &camera.view,
+                &camera.projection,
+                &camera.inverse_view,
+                &camera.inverse_projection,
+                self.debug_grid_scale,
+                &Level.LIMITS,
+            );
+            self.debug_grid.draw();
+        }
+    }
+};
 
 pub const Shader = struct {
     vertex_shader: u32,
@@ -59,11 +155,11 @@ pub const Shader = struct {
         };
     }
 
-    pub fn get_uniform_location(self: *const Self, name: [*c]const u8) i32 {
+    pub fn get_uniform_location(self: *const Shader, name: [*c]const u8) i32 {
         return gl.glGetUniformLocation(self.shader, name);
     }
 
-    pub fn use(self: *const Self) void {
+    pub fn use(self: *const Shader) void {
         gl.glUseProgram(self.shader);
     }
 
@@ -162,6 +258,51 @@ pub const MeshShader = struct {
             .roughness_loc = roughness_loc,
             .ao_loc = ao_loc,
         };
+    }
+
+    pub fn use(self: *const Self) void {
+        self.shader.use();
+    }
+
+    pub fn set_scene_params(
+        self: *const Self,
+        camera_view: *const math.Mat4,
+        camera_position: *const math.Vec3,
+        camera_projection: *const math.Mat4,
+        lights_position: *const [NUM_LIGHTS]math.Vec3,
+        lights_color: *const [NUM_LIGHTS]math.Color3,
+        direct_light_direction: *const math.Vec3,
+        direct_light_color: *const math.Color3,
+    ) void {
+        gl.glUniformMatrix4fv(self.view_loc, 1, gl.GL_FALSE, @ptrCast(camera_view));
+        gl.glUniformMatrix4fv(self.projection_loc, 1, gl.GL_FALSE, @ptrCast(camera_projection));
+        gl.glUniform3f(self.camera_pos_loc, camera_position.x, camera_position.y, camera_position.z);
+        gl.glUniform3fv(self.lights_pos_loc, NUM_LIGHTS, @ptrCast(lights_position));
+        gl.glUniform3fv(self.lights_color_loc, NUM_LIGHTS, @ptrCast(lights_color));
+        gl.glUniform3f(
+            self.direct_light_direction,
+            direct_light_direction.x,
+            direct_light_direction.y,
+            direct_light_direction.z,
+        );
+        gl.glUniform3f(
+            self.direct_light_color,
+            direct_light_color.r,
+            direct_light_color.g,
+            direct_light_color.b,
+        );
+    }
+
+    pub fn set_mesh_params(
+        self: *const Self,
+        model: *const math.Mat4,
+        material: *const assets.Material,
+    ) void {
+        gl.glUniformMatrix4fv(self.model_loc, 1, gl.GL_FALSE, @ptrCast(model));
+        gl.glUniform3f(self.albedo_loc, material.albedo.r, material.albedo.g, material.albedo.b);
+        gl.glUniform1f(self.metallic_loc, material.metallic);
+        gl.glUniform1f(self.roughness_loc, material.roughness);
+        gl.glUniform1f(self.ao_loc, 0.03);
     }
 
     pub fn setup(

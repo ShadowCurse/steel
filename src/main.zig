@@ -10,6 +10,7 @@ const Assets = @import("assets.zig");
 const events = @import("events.zig");
 
 const rendering = @import("rendering.zig");
+const Renderer = rendering.Renderer;
 const MeshShader = rendering.MeshShader;
 const DebugGridShader = rendering.DebugGridShader;
 const GpuMesh = rendering.GpuMesh;
@@ -68,12 +69,6 @@ pub const App = struct {
 
     assets_file_mem: memory.FileMem = undefined,
 
-    mesh_shader: MeshShader = undefined,
-    cube: GpuMesh = undefined,
-    debug_grid_shader: DebugGridShader = undefined,
-    debug_grid: DebugGrid = undefined,
-    debug_grid_scale: f32 = 10.0,
-
     floating_camera: Camera = .{},
     topdown_camera: Camera = .{},
     use_topdown_camera: bool = false,
@@ -81,6 +76,8 @@ pub const App = struct {
     level: Level = .{},
     current_crystals: u32 = 0,
     lost: bool = false,
+
+    renderer: Renderer = undefined,
 
     game_mode: GameMode = .Paused,
     input_mode: InputMode = .Selection,
@@ -118,6 +115,13 @@ pub const App = struct {
     const DIRECT_LIGHT_DIRECTION: math.Vec3 = .{ .x = -0.5, .y = -0.5, .z = -1.0 };
     const DIRECT_LIGHT_COLOR: math.Color3 = .{ .r = 1.0, .g = 1.0, .b = 1.0 };
 
+    const ENVIRONMENT: rendering.Environment = .{
+        .lights_position = LIGHTS_POSITION,
+        .lights_color = LIGHTS_COLOR,
+        .direct_light_direction = DIRECT_LIGHT_DIRECTION,
+        .direct_light_color = DIRECT_LIGHT_COLOR,
+    };
+
     const Self = @This();
 
     pub fn init(self: *Self) !void {
@@ -135,12 +139,6 @@ pub const App = struct {
             memory.FileMem.init(Assets.DEFAULT_PACKED_ASSETS_PATH) catch unreachable;
         Assets.init(self.assets_file_mem.mem) catch unreachable;
 
-        const mesh_shader = MeshShader.init();
-        const debug_grid_shader = DebugGridShader.init();
-
-        const cube = GpuMesh.init(Mesh.Vertex, Mesh.Cube.vertices, Mesh.Cube.indices);
-        const debug_grid = DebugGrid.init();
-
         const floating_camera: Camera = .{ .position = .{ .y = -5.0, .z = 5.0 }, .pitch = -1.1 };
         const topdown_camera: Camera = .{
             .position = .{ .z = 10.0 },
@@ -148,10 +146,7 @@ pub const App = struct {
             .top_down = true,
         };
 
-        self.mesh_shader = mesh_shader;
-        self.cube = cube;
-        self.debug_grid_shader = debug_grid_shader;
-        self.debug_grid = debug_grid;
+        self.renderer = .init();
         self.floating_camera = floating_camera;
         self.topdown_camera = topdown_camera;
 
@@ -220,23 +215,11 @@ pub const App = struct {
         }
 
         self.prepare_imgui_frame();
+        {
+            self.renderer.reset();
+            defer self.renderer.render(camera, &Self.ENVIRONMENT);
 
-        gl.glClearDepth(0.0);
-        gl.glClearColor(0.0, 0.0, 0.0, 1.0);
-        gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT);
-
-        self.draw_level(camera, dt);
-
-        if (self.show_grid) {
-            self.debug_grid_shader.setup(
-                &camera.view,
-                &camera.projection,
-                &camera.inverse_view,
-                &camera.inverse_projection,
-                self.debug_grid_scale,
-                &Level.LIMITS,
-            );
-            self.debug_grid.draw();
+            self.draw_level(dt);
         }
 
         const imgui_data = cimgui.igGetDrawData();
@@ -283,7 +266,7 @@ pub const App = struct {
         self.lost = self.level.thrones.empty();
     }
 
-    pub fn draw_level(self: *Self, camera: *const Camera, dt: f32) void {
+    pub fn draw_level(self: *Self, dt: f32) void {
         for (0..Level.WIDTH) |x| {
             for (0..Level.HEIGHT) |y| {
                 const cell = self.level.cells[x][y];
@@ -292,21 +275,20 @@ pub const App = struct {
                     else => {
                         const model_type = Level.cell_to_model_type(cell);
                         const p = Level.xy_to_vec3(.{ .x = @intCast(x), .y = @intCast(y) });
-                        const model = math.Mat4.IDENDITY.translate(p);
+                        const transform = math.Mat4.IDENDITY.translate(p);
 
-                        const m = Assets.materials.getPtrConst(model_type);
-                        var albedo = m.albedo;
+                        var material = Assets.materials.get(model_type);
 
                         // quick hack to change color
                         switch (cell) {
                             .FloorTrap => |ft| {
                                 if (!ft.active)
-                                    albedo = albedo.lerp(
+                                    material.albedo = material.albedo.lerp(
                                         .{ .r = 0.9, .g = 0.45, .b = 0.05, .a = 1.0 },
                                         1.0 - ft.activate_time_remaining / ft.activate_time,
                                     )
                                 else
-                                    albedo = albedo.lerp(
+                                    material.albedo = material.albedo.lerp(
                                         .{ .r = 1.0, .a = 1.0 },
                                         1.0 - ft.active_time_remaining / ft.active_time,
                                     );
@@ -319,25 +301,15 @@ pub const App = struct {
                                 if (xy.x == x and xy.y == y) {
                                     self.selected_item_time += dt;
                                     const t = @abs(@sin(self.selected_item_time * 2.0));
-                                    albedo = Self.HILIGHT_COLOR.lerp(albedo, t);
+                                    material.albedo = Self.HILIGHT_COLOR.lerp(material.albedo, t);
                                 }
                             }
                         }
-                        self.mesh_shader.setup(
-                            &camera.position,
-                            &camera.view,
-                            &camera.projection,
-                            &model,
-                            &LIGHTS_POSITION,
-                            &LIGHTS_COLOR,
-                            &DIRECT_LIGHT_DIRECTION,
-                            &DIRECT_LIGHT_COLOR,
-                            &albedo,
-                            m.metallic,
-                            m.roughness,
-                            0.03,
+                        self.renderer.add_mesh_draw(
+                            Assets.gpu_meshes.getPtrConst(model_type),
+                            transform,
+                            material,
                         );
-                        Assets.gpu_meshes.getPtrConst(model_type).draw();
                     },
                 }
             }
@@ -347,53 +319,35 @@ pub const App = struct {
         while (iter.next()) |enemy| {
             {
                 const transform = math.Mat4.IDENDITY.translate(enemy.position);
-                const m = Assets.materials.getPtrConst(.Enemy);
+                var material = Assets.materials.get(.Enemy);
 
                 const t =
                     @as(f32, @floatFromInt(enemy.hp)) /
                     @as(f32, @floatFromInt(enemy.max_hp));
-                const albedo = Level.Enemy.NO_HP_COLOR.lerp(m.albedo, t);
+                material.albedo = Level.Enemy.NO_HP_COLOR.lerp(material.albedo, t);
 
-                self.mesh_shader.setup(
-                    &camera.position,
-                    &camera.view,
-                    &camera.projection,
-                    &transform,
-                    &LIGHTS_POSITION,
-                    &LIGHTS_COLOR,
-                    &DIRECT_LIGHT_DIRECTION,
-                    &DIRECT_LIGHT_COLOR,
-                    &albedo,
-                    m.metallic,
-                    m.roughness,
-                    0.03,
+                self.renderer.add_mesh_draw(
+                    Assets.gpu_meshes.getPtrConst(.Enemy),
+                    transform,
+                    material,
                 );
-                Assets.gpu_meshes.getPtrConst(.Enemy).draw();
             }
 
             if (enemy.show_path) {
                 if (enemy.path) |path| {
                     for (path, 0..) |xy, i| {
                         const p = Level.xy_to_vec3(xy);
-                        const model = math.Mat4.IDENDITY.translate(p);
+                        const transform = math.Mat4.IDENDITY.translate(p);
 
-                        const m = Assets.materials.getPtrConst(.PathMarker);
+                        var material = Assets.materials.get(.PathMarker);
                         const t = @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(path.len));
-                        self.mesh_shader.setup(
-                            &camera.position,
-                            &camera.view,
-                            &camera.projection,
-                            &model,
-                            &LIGHTS_POSITION,
-                            &LIGHTS_COLOR,
-                            &DIRECT_LIGHT_DIRECTION,
-                            &DIRECT_LIGHT_COLOR,
-                            &m.albedo.lerp(.{ .r = 1.0 }, t),
-                            m.metallic,
-                            m.roughness,
-                            0.03,
+                        material.albedo = material.albedo.lerp(.{ .r = 1.0 }, t);
+
+                        self.renderer.add_mesh_draw(
+                            Assets.gpu_meshes.getPtrConst(.Enemy),
+                            transform,
+                            material,
                         );
-                        Assets.gpu_meshes.getPtrConst(.PathMarker).draw();
                     }
                 }
             }
@@ -463,8 +417,16 @@ pub const App = struct {
         }
 
         if (cimgui.igCollapsingHeader_BoolPtr("Debug grid", &open, 0)) {
-            _ = cimgui.igCheckbox("Enabled", &self.show_grid);
-            _ = cimgui.igDragFloat("scale", &self.debug_grid_scale, 0.1, 1.0, 100.0, null, 0);
+            _ = cimgui.igCheckbox("Enabled", &self.renderer.show_debug_grid);
+            _ = cimgui.igDragFloat(
+                "scale",
+                &self.renderer.debug_grid_scale,
+                0.1,
+                1.0,
+                100.0,
+                null,
+                0,
+            );
         }
 
         if (cimgui.igCollapsingHeader_BoolPtr("Materials", &open, 0)) {

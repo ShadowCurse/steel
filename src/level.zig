@@ -72,10 +72,10 @@ pub const Enemy = struct {
     current_xy: XY = .{},
     finished: bool = false,
 
-    speed: f32 = 5.0,
+    speed: f32 = 0.5,
     hp: i32 = 20,
     max_hp: i32 = 20,
-    damage: i32 = 50,
+    damage: i32 = 10,
 
     was_hit: bool = false,
 
