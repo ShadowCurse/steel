@@ -623,11 +623,11 @@ pub const GpuFont = struct {
         gl.glTexImage2D(
             gl.GL_TEXTURE_2D,
             0,
-            gl.GL_RED,
+            gl.GL_ALPHA,
             Font.FONT_BITMAP_SIZE,
             Font.FONT_BITMAP_SIZE,
             0,
-            gl.GL_RED,
+            gl.GL_ALPHA,
             gl.GL_UNSIGNED_BYTE,
             @ptrCast(font.bitmap.ptr),
         );
@@ -649,11 +649,14 @@ pub const TextShader = struct {
     uv_scale: i32,
     uv_offset: i32,
 
+    buffer: if (builtin.target.os.tag == .emscripten) u32 else void,
+    vertex_array: if (builtin.target.os.tag == .emscripten) u32 else void,
+
     const Self = @This();
 
     pub fn init() Self {
         const shader = if (builtin.target.os.tag == .emscripten)
-            unreachable
+            Shader.init("resources/shaders/text_web.vert", "resources/shaders/text_web.frag")
         else
             Shader.init("resources/shaders/text.vert", "resources/shaders/text.frag");
 
@@ -664,15 +667,61 @@ pub const TextShader = struct {
         const uv_scale = shader.get_uniform_location("uv_scale");
         const uv_offset = shader.get_uniform_location("uv_offset");
 
-        return .{
-            .shader = shader,
-            .view = view,
-            .projection = projection,
-            .model = model,
-            .color = color,
-            .uv_scale = uv_scale,
-            .uv_offset = uv_offset,
-        };
+        if (builtin.target.os.tag == .emscripten) {
+            const PUV = extern struct {
+                position: math.Vec3,
+                uv: math.Vec2,
+            };
+            const vertices = [_]PUV{
+                .{ .position = .{ .x = 0.5, .y = 0.5, .z = 0.0 }, .uv = .{ .x = 1.0, .y = 0.0 } },
+                .{ .position = .{ .x = -0.5, .y = 0.5, .z = 0.0 }, .uv = .{ .x = 0.0, .y = 0.0 } },
+                .{ .position = .{ .x = -0.5, .y = -0.5, .z = 0.0 }, .uv = .{ .x = 0.0, .y = 1.0 } },
+                .{ .position = .{ .x = -0.5, .y = -0.5, .z = 0.0 }, .uv = .{ .x = 0.0, .y = 1.0 } },
+                .{ .position = .{ .x = 0.5, .y = -0.5, .z = 0.0 }, .uv = .{ .x = 1.0, .y = 1.0 } },
+                .{ .position = .{ .x = 0.5, .y = 0.5, .z = 0.0 }, .uv = .{ .x = 1.0, .y = 0.0 } },
+            };
+            var buffer: u32 = undefined;
+            gl.glGenBuffers(1, &buffer);
+            gl.glBindBuffer(gl.GL_ARRAY_BUFFER, buffer);
+            gl.glBufferData(
+                gl.GL_ARRAY_BUFFER,
+                @sizeOf(@TypeOf(vertices)),
+                &vertices,
+                gl.GL_STATIC_DRAW,
+            );
+
+            var vertex_array: u32 = undefined;
+            gl.glGenVertexArrays(1, &vertex_array);
+            gl.glBindVertexArray(vertex_array);
+            gl.glBindBuffer(gl.GL_ARRAY_BUFFER, buffer);
+            gl.glVertexAttribPointer(0, 3, gl.GL_FLOAT, gl.GL_FALSE, @sizeOf(PUV), @ptrFromInt(0));
+            gl.glVertexAttribPointer(1, 2, gl.GL_FLOAT, gl.GL_FALSE, @sizeOf(PUV), @ptrFromInt(3 * @sizeOf(f32)));
+            gl.glEnableVertexAttribArray(0);
+            gl.glEnableVertexAttribArray(1);
+            return .{
+                .shader = shader,
+                .view = view,
+                .projection = projection,
+                .model = model,
+                .color = color,
+                .uv_scale = uv_scale,
+                .uv_offset = uv_offset,
+                .buffer = buffer,
+                .vertex_array = vertex_array,
+            };
+        } else {
+            return .{
+                .shader = shader,
+                .view = view,
+                .projection = projection,
+                .model = model,
+                .color = color,
+                .uv_scale = uv_scale,
+                .uv_offset = uv_offset,
+                .buffer = {},
+                .vertex_array = {},
+            };
+        }
     }
 
     pub fn use(self: *const Self) void {
@@ -702,7 +751,9 @@ pub const TextShader = struct {
     }
 
     pub fn draw(self: *const Self) void {
-        _ = self;
+        if (builtin.target.os.tag == .emscripten) {
+            gl.glBindVertexArray(self.vertex_array);
+        }
         gl.glDrawArrays(gl.GL_TRIANGLES, 0, 6);
     }
 };

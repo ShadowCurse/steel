@@ -16,7 +16,7 @@ void main() {
     vec2 uv_offset = uv_offset / size;
     vec2 uv_scale = uv_scale / size;
 
-    float r = texture(font_texture, in_uv * uv_scale + uv_offset).r;
-    vec3 c = color * r;
-    out_color = vec4(c, r);
+    float a = texture(font_texture, in_uv * uv_scale + uv_offset).a;
+    vec3 c = color * a;
+    out_color = vec4(c, a);
 }
