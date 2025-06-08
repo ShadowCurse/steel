@@ -5,6 +5,7 @@ const gl = @import("bindings/gl.zig");
 const math = @import("math.zig");
 const assets = @import("assets.zig");
 
+const Font = @import("font.zig");
 const Level = @import("level.zig");
 const Camera = @import("camera.zig");
 
@@ -22,6 +23,9 @@ pub const Renderer = struct {
     mesh_shader: MeshShader,
     mesh_infos: std.BoundedArray(RenderMeshInfo, 128) = .{},
 
+    text_shader: TextShader = undefined,
+    char_infos: std.BoundedArray(RenderCharInfo, 128) = .{},
+
     // debug things
     show_debug_grid: bool = true,
     debug_grid_scale: f32 = 10.0,
@@ -34,11 +38,23 @@ pub const Renderer = struct {
         material: assets.Material,
     };
 
+    const RenderCharInfo = struct {
+        position: math.Vec3,
+        color: math.Color3,
+        width: f32,
+        height: f32,
+        texture_scale_x: f32 = 0.0,
+        texture_scale_y: f32 = 0.0,
+        texture_offset_x: f32 = 0.0,
+        texture_offset_y: f32 = 0.0,
+    };
+
     const Self = @This();
 
     pub fn init() Self {
         return .{
             .mesh_shader = .init(),
+            .text_shader = .init(),
             .debug_grid_shader = .init(),
             .debug_grid = .init(),
         };
@@ -46,6 +62,7 @@ pub const Renderer = struct {
 
     pub fn reset(self: *Self) void {
         self.mesh_infos.clear();
+        self.char_infos.clear();
 
         gl.glClearDepth(0.0);
         gl.glClearColor(0.0, 0.0, 0.0, 1.0);
@@ -66,6 +83,59 @@ pub const Renderer = struct {
         self.mesh_infos.append(mesh_info) catch {
             log.warn(@src(), "Cannot add more meshes to draw queue", .{});
         };
+    }
+
+    pub fn add_text_draw(
+        self: *Self,
+        text: []const u8,
+        position: math.Vec3,
+        size: f32,
+        color: math.Color3,
+    ) void {
+        const font = assets.fonts.getPtrConst(.Default);
+        const scale = size / font.size;
+        const font_scale = scale * font.scale();
+        var offset: math.Vec3 = .{};
+
+        for (text, 0..) |char, i| {
+            const char_info = if (font.chars.len <= char) blk: {
+                log.warn(@src(), "Trying to render unknown character: {d}", .{char});
+                break :blk &Font.Char{};
+            } else &font.chars[char];
+            const char_kern =
+                if (0 < i) blk: {
+                    const prev_char = text[i - 1];
+                    break :blk font.get_kerning(prev_char, char);
+                } else blk: {
+                    break :blk 0.0;
+                };
+
+            offset.x += char_kern * font_scale;
+            const char_origin = position.add(offset);
+            const char_offset = math.Vec3{
+                .x = char_info.x_offset + char_info.width * 0.5,
+                .y = -char_info.y_offset - char_info.height * 0.5,
+            };
+            const char_position = char_origin.add(char_offset.mul_f32(scale));
+
+            const render_char_info = RenderCharInfo{
+                .position = char_position,
+                .color = color,
+                .width = char_info.width * scale,
+                .height = char_info.height * scale,
+                .texture_scale_x = char_info.width,
+                .texture_scale_y = char_info.height,
+                .texture_offset_x = char_info.texture_offset_x,
+                .texture_offset_y = char_info.texture_offset_y,
+            };
+
+            self.char_infos.append(render_char_info) catch {
+                log.warn(@src(), "Cannot add more chars to draw queue", .{});
+                return;
+            };
+
+            offset.x += char_info.x_advance * scale;
+        }
     }
 
     pub fn render(
@@ -98,6 +168,13 @@ pub const Renderer = struct {
                 &Level.LIMITS,
             );
             self.debug_grid.draw();
+        }
+
+        self.text_shader.use();
+        self.text_shader.set_font(assets.gpu_fonts.getPtrConst(.Default));
+        for (self.char_infos.slice()) |*ci| {
+            self.text_shader.set_char_info(camera, ci);
+            self.text_shader.draw();
         }
     }
 };
@@ -525,5 +602,107 @@ pub const DebugGridShader = struct {
                 @ptrCast(camera_inverse_projection),
             );
         }
+    }
+};
+
+pub const GpuFont = struct {
+    texture: u32,
+
+    const Self = @This();
+
+    pub fn from_font(font: *const Font) Self {
+        var texture: u32 = undefined;
+        gl.glGenTextures(1, &texture);
+        gl.glBindTexture(gl.GL_TEXTURE_2D, texture);
+
+        gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_WRAP_S, gl.GL_REPEAT);
+        gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_WRAP_T, gl.GL_REPEAT);
+        gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MIN_FILTER, gl.GL_LINEAR_MIPMAP_LINEAR);
+        gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MAG_FILTER, gl.GL_LINEAR);
+
+        gl.glTexImage2D(
+            gl.GL_TEXTURE_2D,
+            0,
+            gl.GL_RED,
+            Font.FONT_BITMAP_SIZE,
+            Font.FONT_BITMAP_SIZE,
+            0,
+            gl.GL_RED,
+            gl.GL_UNSIGNED_BYTE,
+            @ptrCast(font.bitmap.ptr),
+        );
+        gl.glGenerateMipmap(gl.GL_TEXTURE_2D);
+        log.info(@src(), "gpu font texture: {d}", .{texture});
+        return .{
+            .texture = texture,
+        };
+    }
+};
+
+pub const TextShader = struct {
+    shader: Shader,
+
+    view: i32,
+    projection: i32,
+    model: i32,
+    color: i32,
+    uv_scale: i32,
+    uv_offset: i32,
+
+    const Self = @This();
+
+    pub fn init() Self {
+        const shader = if (builtin.target.os.tag == .emscripten)
+            unreachable
+        else
+            Shader.init("resources/shaders/text.vert", "resources/shaders/text.frag");
+
+        const view = shader.get_uniform_location("view");
+        const projection = shader.get_uniform_location("projection");
+        const model = shader.get_uniform_location("model");
+        const color = shader.get_uniform_location("color");
+        const uv_scale = shader.get_uniform_location("uv_scale");
+        const uv_offset = shader.get_uniform_location("uv_offset");
+
+        return .{
+            .shader = shader,
+            .view = view,
+            .projection = projection,
+            .model = model,
+            .color = color,
+            .uv_scale = uv_scale,
+            .uv_offset = uv_offset,
+        };
+    }
+
+    pub fn use(self: *const Self) void {
+        self.shader.use();
+    }
+
+    pub fn set_font(self: *const Self, font: *const GpuFont) void {
+        _ = self;
+        gl.glActiveTexture(gl.GL_TEXTURE0);
+        gl.glBindTexture(gl.GL_TEXTURE_2D, font.texture);
+    }
+
+    pub fn set_char_info(
+        self: *const Self,
+        camera: *const Camera,
+        char_info: *const Renderer.RenderCharInfo,
+    ) void {
+        const transform = math.Mat4.IDENDITY
+            .translate(char_info.position)
+            .scale(.{ .x = char_info.width, .y = char_info.height });
+        gl.glUniformMatrix4fv(self.view, 1, gl.GL_FALSE, @ptrCast(&camera.view));
+        gl.glUniformMatrix4fv(self.projection, 1, gl.GL_FALSE, @ptrCast(&camera.projection));
+        gl.glUniformMatrix4fv(self.model, 1, gl.GL_FALSE, @ptrCast(&transform));
+        gl.glUniform3f(self.color, char_info.color.r, char_info.color.g, char_info.color.b);
+        gl.glUniform2f(self.uv_scale, char_info.texture_scale_x, char_info.texture_scale_y);
+        gl.glUniform2f(self.uv_offset, char_info.texture_offset_x, char_info.texture_offset_y);
+    }
+
+    pub fn draw(self: *const Self) void {
+        _ = self;
+        gl.glDrawArrays(gl.GL_TRIANGLES, 0, 6);
     }
 };

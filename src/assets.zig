@@ -15,6 +15,7 @@ const Vec2 = math.Vec2;
 
 const rendering = @import("rendering.zig");
 const GpuMesh = rendering.GpuMesh;
+const GpuFont = rendering.GpuFont;
 
 const Font = @import("font.zig");
 const ALL_CHARS = Font.ALL_CHARS;
@@ -54,11 +55,13 @@ pub const DEFAULT_PACKED_ASSETS_PATH = "resources/packed.p";
 pub const GpuMeshes = std.EnumArray(ModelType, GpuMesh);
 pub const Materials = std.EnumArray(ModelType, Material);
 pub const Meshes = std.EnumArray(ModelType, Mesh);
+pub const GpuFonts = std.EnumArray(FontType, GpuFont);
 pub const Fonts = std.EnumArray(FontType, Font);
 
 pub var gpu_meshes: GpuMeshes = undefined;
 pub var materials: Materials = undefined;
 pub var meshes: Meshes = undefined;
+pub var gpu_fonts: GpuFonts = undefined;
 pub var fonts: Fonts = undefined;
 
 const Self = @This();
@@ -66,6 +69,7 @@ const Self = @This();
 pub fn init(mem: []align(4096) const u8) !void {
     const unpack_result = try unpack(mem);
     gpu_meshes_from_meshes(&unpack_result.meshes);
+    gpu_fonts_from_fonts(&unpack_result.fonts);
     materials = unpack_result.mats;
     meshes = unpack_result.meshes;
     fonts = unpack_result.fonts;
@@ -74,6 +78,12 @@ pub fn init(mem: []align(4096) const u8) !void {
 fn gpu_meshes_from_meshes(m: *const Meshes) void {
     for (std.enums.values(ModelType)) |v| {
         gpu_meshes.getPtr(v).* = GpuMesh.from_mesh(m.getPtrConst(v));
+    }
+}
+
+fn gpu_fonts_from_fonts(m: *const Fonts) void {
+    for (std.enums.values(FontType)) |v| {
+        gpu_fonts.getPtr(v).* = GpuFont.from_font(m.getPtrConst(v));
     }
 }
 

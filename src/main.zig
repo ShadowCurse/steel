@@ -220,6 +220,7 @@ pub const App = struct {
             defer self.renderer.render(camera, &Self.ENVIRONMENT);
 
             self.draw_level(dt);
+            self.draw_ui();
         }
 
         const imgui_data = cimgui.igGetDrawData();
@@ -352,6 +353,15 @@ pub const App = struct {
                 }
             }
         }
+    }
+
+    pub fn draw_ui(self: *Self) void {
+        self.renderer.add_text_draw(
+            "Some test text",
+            .{ .x = -2.0, .y = 2.0, .z = 2.0 },
+            1.0,
+            .WHITE,
+        );
     }
 
     pub fn prepare_imgui_frame(self: *Self) void {
