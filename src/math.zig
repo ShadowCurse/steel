@@ -7,6 +7,8 @@ pub const Color3 = extern struct {
     r: f32 = 0.0,
     g: f32 = 0.0,
     b: f32 = 0.0,
+
+    pub const WHITE: Color3 = .{.r = 1.0, .g = 1.0, .b = 1.0};
 };
 
 pub const Color4 = extern struct {
@@ -14,6 +16,8 @@ pub const Color4 = extern struct {
     g: f32 = 0.0,
     b: f32 = 0.0,
     a: f32 = 0.0,
+
+    pub const WHITE: Color4 = .{.r = 1.0, .g = 1.0, .b = 1.0, .a = 1.0};
 
     pub inline fn lerp(start: Color4, end: Color4, t: f32) Color4 {
         return .{
