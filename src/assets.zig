@@ -108,6 +108,7 @@ pub const FontInfo = struct {
     ascent: i32 = 0,
     decent: i32 = 0,
     line_gap: i32 = 0,
+    n_chars: u32 = 0,
 };
 
 pub const Packer = struct {
@@ -294,18 +295,14 @@ pub const Packer = struct {
 
         const char_info =
             try scratch_alloc.alloc(stb.stbtt_bakedchar, @intCast(stb_font.numGlyphs));
-        const bitmaps_size = self.font_bitmaps.items.len;
-        try self.font_bitmaps.resize(
-            gpa_alloc,
-            bitmaps_size + FONT_BITMAP_SIZE * FONT_BITMAP_SIZE,
-        );
-        const bitmap_bytes = &self.font_bitmaps.items[bitmaps_size];
+        const bitmap =
+            try scratch_alloc.alignedAlloc(u8, 4, FONT_BITMAP_SIZE * FONT_BITMAP_SIZE);
 
         _ = stb.stbtt_BakeFontBitmap(
             file_mem.mem.ptr,
             0,
             font_size,
-            bitmap_bytes,
+            bitmap.ptr,
             FONT_BITMAP_SIZE,
             FONT_BITMAP_SIZE,
             0,
@@ -318,6 +315,7 @@ pub const Packer = struct {
         var line_gap: i32 = undefined;
         stb.stbtt_GetFontVMetrics(&stb_font, &ascent, &decent, &line_gap);
 
+        const start_chars = self.chars.items.len;
         try self.chars.ensureUnusedCapacity(gpa_alloc, char_info.len);
         for (char_info) |ci| {
             const c = Char{
@@ -327,6 +325,7 @@ pub const Packer = struct {
                 .height = @floatFromInt(ci.y1 - ci.y0),
                 .x_offset = ci.xoff,
                 .y_offset = ci.yoff,
+                .x_advance = ci.xadvance,
             };
             try self.chars.append(gpa_alloc, c);
         }
@@ -344,12 +343,16 @@ pub const Packer = struct {
             }
         }
 
+        try self.font_bitmaps.appendSlice(gpa_alloc, bitmap);
+
         const font_info = FontInfo{
             .size = font_size,
             .ascent = ascent,
             .decent = decent,
             .line_gap = line_gap,
+            .n_chars = @intCast(self.chars.items.len - start_chars),
         };
+        log.info(@src(), "{d} chars", .{font_info.n_chars});
         self.font_infos.getPtr(font_type).* = font_info;
     }
 
@@ -436,13 +439,17 @@ pub fn unpack(mem: []align(4096) const u8) !UnpackedAssets {
     fonts_infos.ptr = @ptrFromInt(mem_ptr);
     fonts_infos.len = Fonts.len;
 
+    var total_chars_len: u32 = 0;
+    for (fonts_infos) |*fi|
+        total_chars_len += fi.n_chars;
+
     mem_ptr += @sizeOf(FontInfo) * Fonts.len;
     mem_ptr = memory.align_up(mem_ptr, @alignOf(Char));
     var chars: []const Char = undefined;
     chars.ptr = @ptrFromInt(mem_ptr);
-    chars.len = Fonts.len * ALL_CHARS.len;
+    chars.len = total_chars_len;
 
-    mem_ptr += @sizeOf(Char) * chars.len;
+    mem_ptr += @sizeOf(Char) * total_chars_len;
     mem_ptr = memory.align_up(mem_ptr, @alignOf(Kerning));
     var kernings: []const Kerning = undefined;
     kernings.ptr = @ptrFromInt(mem_ptr);
@@ -478,11 +485,11 @@ pub fn unpack(mem: []align(4096) const u8) !UnpackedAssets {
             .ascent = font_info.ascent,
             .decent = font_info.decent,
             .line_gap = font_info.line_gap,
-            .chars = chars[char_offset..][0..ALL_CHARS.len],
+            .chars = chars[char_offset..][0..font_info.n_chars],
             .kerning_table = kernings[kerning_offset..][0 .. ALL_CHARS.len * ALL_CHARS.len],
             .bitmap = bitmaps[bitmap_offset..][0 .. FONT_BITMAP_SIZE * FONT_BITMAP_SIZE],
         };
-        char_offset += ALL_CHARS.len;
+        char_offset += font_info.n_chars;
         kerning_offset += ALL_CHARS.len * ALL_CHARS.len;
         bitmap_offset += FONT_BITMAP_SIZE * FONT_BITMAP_SIZE;
     }

@@ -26,6 +26,7 @@ pub const Char = struct {
     height: f32 = 0.0,
     x_offset: f32 = 0.0,
     y_offset: f32 = 0.0,
+    x_advance: f32 = 0.0,
 };
 
 const Self = @This();
@@ -34,7 +35,7 @@ pub fn scale(self: *const Self) f32 {
     return self.size / @as(f32, @floatFromInt(self.ascent));
 }
 
-pub fn get_kerning(self: *const Self, char_1: u8, char_2: u8) i32 {
+pub fn get_kerning(self: *const Self, char_1: u8, char_2: u8) f32 {
     const index = char_1 - FIRST_CHAR;
     const offset = char_2 - FIRST_CHAR;
     const info = self.kerning_table[index * ALL_CHARS.len + offset];
@@ -44,5 +45,5 @@ pub fn get_kerning(self: *const Self, char_1: u8, char_2: u8) i32 {
         "Tryingt to get a kerninig info for pair {c}/{c} but got one for pair {c}/{c}",
         .{ char_1, char_2, info.char_1, info.char_2 },
     );
-    return info.kerning;
+    return @floatFromInt(info.kerning);
 }
