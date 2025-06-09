@@ -30,7 +30,6 @@ pub const Renderer = struct {
     show_debug_grid: bool = true,
     debug_grid_scale: f32 = 10.0,
     debug_grid_shader: DebugGridShader = undefined,
-    debug_grid: DebugGrid = undefined,
 
     const RenderMeshInfo = struct {
         mesh: *const GpuMesh,
@@ -56,7 +55,6 @@ pub const Renderer = struct {
             .mesh_shader = .init(),
             .text_shader = .init(),
             .debug_grid_shader = .init(),
-            .debug_grid = .init(),
         };
     }
 
@@ -167,7 +165,7 @@ pub const Renderer = struct {
                 self.debug_grid_scale,
                 &Level.LIMITS,
             );
-            self.debug_grid.draw();
+            self.debug_grid_shader.draw();
         }
 
         self.text_shader.use();
@@ -478,13 +476,40 @@ pub const GpuMesh = struct {
     }
 };
 
-pub const DebugGrid = struct {
+pub const DebugGridShader = struct {
+    shader: Shader,
+
+    view_loc: i32,
+    projection_loc: i32,
+    limits_loc: i32,
+    scale_loc: i32,
+    inverse_view_loc: if (builtin.target.os.tag == .emscripten) i32 else void,
+    inverse_projection_loc: if (builtin.target.os.tag == .emscripten) i32 else void,
+
     buffer: if (builtin.target.os.tag == .emscripten) u32 else void,
     vertex_array: if (builtin.target.os.tag == .emscripten) u32 else void,
 
     const Self = @This();
 
     pub fn init() Self {
+        const shader = if (builtin.target.os.tag == .emscripten)
+            Shader.init("resources/shaders/grid_web.vert", "resources/shaders/grid_web.frag")
+        else
+            Shader.init("resources/shaders/grid.vert", "resources/shaders/grid.frag");
+
+        const view_loc = shader.get_uniform_location("view");
+        const projection_loc = shader.get_uniform_location("projection");
+        const limits_loc = shader.get_uniform_location("limits");
+        const scale_loc = shader.get_uniform_location("scale");
+
+        const inverse_view_loc = if (builtin.target.os.tag == .emscripten)
+            shader.get_uniform_location("inverse_view")
+        else {};
+
+        const inverse_projection_loc = if (builtin.target.os.tag == .emscripten)
+            shader.get_uniform_location("inverse_projection")
+        else {};
+
         if (builtin.target.os.tag == .emscripten) {
             const planes = [_]math.Vec3{
                 math.Vec3{ .x = 1, .y = 1, .z = 0 },
@@ -517,60 +542,30 @@ pub const DebugGrid = struct {
                 @ptrFromInt(0),
             );
             gl.glEnableVertexAttribArray(0);
-            return .{ .buffer = buffer, .vertex_array = vertex_array };
+            return .{
+                .shader = shader,
+                .view_loc = view_loc,
+                .projection_loc = projection_loc,
+                .limits_loc = limits_loc,
+                .scale_loc = scale_loc,
+                .inverse_view_loc = inverse_view_loc,
+                .inverse_projection_loc = inverse_projection_loc,
+                .buffer = buffer,
+                .vertex_array = vertex_array,
+            };
         } else {
-            return .{ .buffer = {}, .vertex_array = {} };
+            return .{
+                .shader = shader,
+                .view_loc = view_loc,
+                .projection_loc = projection_loc,
+                .limits_loc = limits_loc,
+                .scale_loc = scale_loc,
+                .inverse_view_loc = inverse_view_loc,
+                .inverse_projection_loc = inverse_projection_loc,
+                .buffer = {},
+                .vertex_array = {},
+            };
         }
-    }
-
-    pub fn draw(self: *const Self) void {
-        if (builtin.target.os.tag == .emscripten) {
-            gl.glBindVertexArray(self.vertex_array);
-        }
-        gl.glDrawArrays(gl.GL_TRIANGLES, 0, 6);
-    }
-};
-
-pub const DebugGridShader = struct {
-    shader: Shader,
-
-    view_loc: i32,
-    projection_loc: i32,
-    limits_loc: i32,
-    scale_loc: i32,
-    inverse_view_loc: if (builtin.target.os.tag == .emscripten) i32 else void,
-    inverse_projection_loc: if (builtin.target.os.tag == .emscripten) i32 else void,
-
-    const Self = @This();
-
-    pub fn init() Self {
-        const shader = if (builtin.target.os.tag == .emscripten)
-            Shader.init("resources/shaders/grid_web.vert", "resources/shaders/grid_web.frag")
-        else
-            Shader.init("resources/shaders/grid.vert", "resources/shaders/grid.frag");
-
-        const view_loc = shader.get_uniform_location("view");
-        const projection_loc = shader.get_uniform_location("projection");
-        const limits_loc = shader.get_uniform_location("limits");
-        const scale_loc = shader.get_uniform_location("scale");
-
-        const inverse_view_loc = if (builtin.target.os.tag == .emscripten)
-            shader.get_uniform_location("inverse_view")
-        else {};
-
-        const inverse_projection_loc = if (builtin.target.os.tag == .emscripten)
-            shader.get_uniform_location("inverse_projection")
-        else {};
-
-        return .{
-            .shader = shader,
-            .view_loc = view_loc,
-            .projection_loc = projection_loc,
-            .limits_loc = limits_loc,
-            .scale_loc = scale_loc,
-            .inverse_view_loc = inverse_view_loc,
-            .inverse_projection_loc = inverse_projection_loc,
-        };
     }
 
     pub fn setup(
@@ -602,6 +597,13 @@ pub const DebugGridShader = struct {
                 @ptrCast(camera_inverse_projection),
             );
         }
+    }
+
+    pub fn draw(self: *const Self) void {
+        if (builtin.target.os.tag == .emscripten) {
+            gl.glBindVertexArray(self.vertex_array);
+        }
+        gl.glDrawArrays(gl.GL_TRIANGLES, 0, 6);
     }
 };
 
