@@ -1,17 +1,20 @@
 const log = @import("log.zig");
 
-size: f32,
+size: f32 = 0.0,
 ascent: i32 = 0,
 decent: i32 = 0,
 line_gap: i32 = 0,
-chars: []const Char = &.{},
+chars: []const CharInfo = &.{},
 kerning_table: []const Kerning = &.{},
-bitmap: []const u8,
+bitmap: []const u8 = &.{},
+bitmap_height: u32 = 0,
 
 pub const FIRST_CHAR = ' ';
 pub const ALL_CHARS =
     " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~";
-pub const FONT_BITMAP_SIZE = 512;
+pub const BITMAP_WIDTH = 1024;
+pub const BITMAP_HEIGHT = 1024;
+pub const BITMAP_SIZE = BITMAP_WIDTH * BITMAP_HEIGHT;
 
 pub const Kerning = struct {
     char_1: u8 = 0,
@@ -19,7 +22,7 @@ pub const Kerning = struct {
     kerning: i32 = 0,
 };
 
-pub const Char = struct {
+pub const CharInfo = struct {
     texture_offset_x: f32 = 0.0,
     texture_offset_y: f32 = 0.0,
     width: f32 = 0.0,
@@ -33,6 +36,14 @@ const Self = @This();
 
 pub fn scale(self: *const Self) f32 {
     return self.size / @as(f32, @floatFromInt(self.ascent));
+}
+
+pub fn get_char_info(self: *const Self, char: u8) ?CharInfo {
+    if (ALL_CHARS[0] <= char and char <= ALL_CHARS[ALL_CHARS.len - 1]) {
+        return self.chars[char - FIRST_CHAR];
+    } else {
+        return null;
+    }
 }
 
 pub fn get_kerning(self: *const Self, char_1: u8, char_2: u8) f32 {

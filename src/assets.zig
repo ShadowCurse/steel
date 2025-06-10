@@ -19,9 +19,8 @@ const GpuFont = rendering.GpuFont;
 
 const Font = @import("font.zig");
 const ALL_CHARS = Font.ALL_CHARS;
-const FONT_BITMAP_SIZE = Font.FONT_BITMAP_SIZE;
 const Kerning = Font.Kerning;
-const Char = Font.Char;
+const Char = Font.CharInfo;
 
 pub const DEFAULT_FONTS_DIR_PATH = "resources/fonts";
 pub const DEFAULT_MESHES_DIR_PATH = "resources/models";
@@ -119,6 +118,7 @@ pub const FontInfo = struct {
     decent: i32 = 0,
     line_gap: i32 = 0,
     n_chars: u32 = 0,
+    bitmap_height: u32 = 0,
 };
 
 pub const Packer = struct {
@@ -304,20 +304,32 @@ pub const Packer = struct {
         );
 
         const char_info =
-            try scratch_alloc.alloc(stb.stbtt_bakedchar, @intCast(stb_font.numGlyphs));
+            try scratch_alloc.alloc(stb.stbtt_bakedchar, Font.ALL_CHARS.len);
         const bitmap =
-            try scratch_alloc.alignedAlloc(u8, 4, FONT_BITMAP_SIZE * FONT_BITMAP_SIZE);
+            try scratch_alloc.alignedAlloc(u8, 4, Font.BITMAP_SIZE);
 
-        _ = stb.stbtt_BakeFontBitmap(
+        const stb_res = stb.stbtt_BakeFontBitmap(
             file_mem.mem.ptr,
             0,
             font_size,
             bitmap.ptr,
-            FONT_BITMAP_SIZE,
-            FONT_BITMAP_SIZE,
-            0,
-            stb_font.numGlyphs,
+            Font.BITMAP_WIDTH,
+            Font.BITMAP_HEIGHT,
+            Font.FIRST_CHAR,
+            Font.ALL_CHARS.len,
             char_info.ptr,
+        );
+        log.assert(
+            @src(),
+            0 < stb_res,
+            "STB cannot pack all chracters in the bitmap. Only {d} fit",
+            .{-stb_res},
+        );
+        const bitmap_height: u32 = @intCast(stb_res);
+        log.info(
+            @src(),
+            "STB used {d} out of {d} rows in the bitmap",
+            .{ bitmap_height, @as(u32, Font.BITMAP_HEIGHT) },
         );
 
         var ascent: i32 = undefined;
@@ -353,7 +365,10 @@ pub const Packer = struct {
             }
         }
 
-        try self.font_bitmaps.appendSlice(gpa_alloc, bitmap);
+        try self.font_bitmaps.appendSlice(
+            gpa_alloc,
+            bitmap[0 .. Font.BITMAP_WIDTH * bitmap_height],
+        );
 
         const font_info = FontInfo{
             .size = font_size,
@@ -361,6 +376,7 @@ pub const Packer = struct {
             .decent = decent,
             .line_gap = line_gap,
             .n_chars = @intCast(self.chars.items.len - start_chars),
+            .bitmap_height = bitmap_height,
         };
         log.info(@src(), "{d} chars", .{font_info.n_chars});
         self.font_infos.getPtr(font_type).* = font_info;
@@ -450,8 +466,11 @@ pub fn unpack(mem: []align(4096) const u8) !UnpackedAssets {
     fonts_infos.len = Fonts.len;
 
     var total_chars_len: u32 = 0;
-    for (fonts_infos) |*fi|
+    var total_bitmap_len: u32 = 0;
+    for (fonts_infos) |*fi| {
         total_chars_len += fi.n_chars;
+        total_bitmap_len += Font.BITMAP_WIDTH * fi.bitmap_height;
+    }
 
     mem_ptr += @sizeOf(FontInfo) * Fonts.len;
     mem_ptr = memory.align_up(mem_ptr, @alignOf(Char));
@@ -469,7 +488,7 @@ pub fn unpack(mem: []align(4096) const u8) !UnpackedAssets {
     mem_ptr = memory.align_up(mem_ptr, @alignOf(u8));
     var bitmaps: []const u8 = undefined;
     bitmaps.ptr = @ptrFromInt(mem_ptr);
-    bitmaps.len = Fonts.len * FONT_BITMAP_SIZE * FONT_BITMAP_SIZE;
+    bitmaps.len = total_bitmap_len;
 
     var result: UnpackedAssets = undefined;
     for (mats, 0..) |material, i|
@@ -490,6 +509,7 @@ pub fn unpack(mem: []align(4096) const u8) !UnpackedAssets {
     var kerning_offset: u32 = 0;
     var bitmap_offset: u32 = 0;
     for (fonts_infos, 0..) |*font_info, i| {
+        const bitmap_size = Font.BITMAP_WIDTH * font_info.bitmap_height;
         result.fonts.values[i] = .{
             .size = font_info.size,
             .ascent = font_info.ascent,
@@ -497,11 +517,12 @@ pub fn unpack(mem: []align(4096) const u8) !UnpackedAssets {
             .line_gap = font_info.line_gap,
             .chars = chars[char_offset..][0..font_info.n_chars],
             .kerning_table = kernings[kerning_offset..][0 .. ALL_CHARS.len * ALL_CHARS.len],
-            .bitmap = bitmaps[bitmap_offset..][0 .. FONT_BITMAP_SIZE * FONT_BITMAP_SIZE],
+            .bitmap = bitmaps[bitmap_offset..][0..bitmap_size],
+            .bitmap_height = font_info.bitmap_height,
         };
         char_offset += font_info.n_chars;
         kerning_offset += ALL_CHARS.len * ALL_CHARS.len;
-        bitmap_offset += FONT_BITMAP_SIZE * FONT_BITMAP_SIZE;
+        bitmap_offset += bitmap_size;
     }
 
     return result;

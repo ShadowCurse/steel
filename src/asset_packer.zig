@@ -19,7 +19,7 @@ const MODEL_PATHS = ModelPathsType.init(.{
 });
 const FontPathsType = std.EnumArray(Assets.FontType, struct { [:0]const u8, f32 });
 const FONT_PATHS = FontPathsType.init(.{
-    .Default = .{ Assets.DEFAULT_FONTS_DIR_PATH ++ "/Roboto-Regular.ttf", 32.0 },
+    .Default = .{ Assets.DEFAULT_FONTS_DIR_PATH ++ "/Roboto-Regular.ttf", 128.0 },
 });
 
 pub fn main() !void {

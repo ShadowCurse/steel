@@ -95,18 +95,21 @@ pub const Renderer = struct {
         const font_scale = scale * font.scale();
         var offset: math.Vec3 = .{};
 
-        for (text, 0..) |char, i| {
-            const char_info = if (font.chars.len <= char) blk: {
-                log.warn(@src(), "Trying to render unknown character: {d}", .{char});
-                break :blk &Font.Char{};
-            } else &font.chars[char];
-            const char_kern =
-                if (0 < i) blk: {
-                    const prev_char = text[i - 1];
-                    break :blk font.get_kerning(prev_char, char);
-                } else blk: {
-                    break :blk 0.0;
-                };
+        for (text, 0..) |c, i| {
+            var char = c;
+            const char_info = if (font.get_char_info(char)) |ci| blk: {
+                break :blk ci;
+            } else blk: {
+                log.warn(@src(), "Trying to get info about unknown character: {d}", .{char});
+                char = '?';
+                break :blk font.get_char_info(char).?;
+            };
+            const char_kern = if (0 < i) blk: {
+                const prev_char = text[i - 1];
+                break :blk font.get_kerning(prev_char, char);
+            } else blk: {
+                break :blk 0.0;
+            };
 
             offset.x += char_kern * font_scale;
             const char_origin = position.add(offset);
@@ -626,8 +629,8 @@ pub const GpuFont = struct {
             gl.GL_TEXTURE_2D,
             0,
             gl.GL_ALPHA,
-            Font.FONT_BITMAP_SIZE,
-            Font.FONT_BITMAP_SIZE,
+            Font.BITMAP_WIDTH,
+            @intCast(font.bitmap_height),
             0,
             gl.GL_ALPHA,
             gl.GL_UNSIGNED_BYTE,
