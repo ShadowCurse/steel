@@ -356,12 +356,30 @@ pub const App = struct {
     }
 
     pub fn draw_ui(self: *Self) void {
-        self.renderer.add_text_draw(
-            "Some test text",
-            .{ .x = -2.0, .y = 2.0, .z = 2.0 },
-            1.0,
-            .WHITE,
-        );
+        if (self.lost)
+            self.renderer.add_text_draw(
+                "LOST",
+                .{ .x = -2.0, .y = 2.0, .z = 2.0 },
+                1.0,
+                .RED,
+            );
+
+        var it = self.level.thrones.const_iterator();
+        while (it.next()) |throne| {
+            var position = Level.xy_to_vec3(throne.xy);
+            position.z = 1.5;
+            const hp = std.fmt.allocPrint(
+                self.scratch_allocator.allocator(),
+                "HP: {d}",
+                .{throne.hp},
+            ) catch unreachable;
+            self.renderer.add_text_draw(
+                hp,
+                position,
+                0.5,
+                .WHITE,
+            );
+        }
     }
 
     pub fn prepare_imgui_frame(self: *Self) void {
@@ -373,23 +391,6 @@ pub const App = struct {
         defer cimgui.igRender();
 
         var cimgui_id: i32 = 0;
-        {
-            _ = cimgui.igBegin("Game info", &open, 0);
-            defer cimgui.igEnd();
-
-            _ = cimgui.igValue_Bool("lost", self.lost);
-            _ = cimgui.igValue_Uint("crystals", self.current_crystals);
-
-            var it = self.level.thrones.const_iterator();
-            while (it.next()) |throne| {
-                cimgui.igPushID_Int(cimgui_id);
-                cimgui_id += 1;
-                defer cimgui.igPopID();
-
-                _ = cimgui.igValue_Int("thone hp", throne.hp);
-            }
-        }
-
         _ = cimgui.igBegin("options", &open, 0);
         defer cimgui.igEnd();
 
