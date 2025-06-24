@@ -356,12 +356,34 @@ pub const App = struct {
     }
 
     pub fn draw_ui(self: *Self) void {
+        self.renderer.add_text_draw(
+            "TEST",
+            .{ .x = -2.0, .y = -4.0, .z = 2.0 },
+            1.0,
+            .GREEN,
+            .World,
+        );
+
+        const c = std.fmt.allocPrint(
+            self.scratch_allocator.allocator(),
+            "Crystals: {d}",
+            .{self.current_crystals},
+        ) catch unreachable;
+        self.renderer.add_text_draw(
+            c,
+            .{ .x = -100.0, .y = 650.0 },
+            64.0,
+            .WHITE,
+            .Screen,
+        );
+
         if (self.lost)
             self.renderer.add_text_draw(
                 "LOST",
                 .{ .x = -2.0, .y = 2.0, .z = 2.0 },
                 1.0,
                 .RED,
+                .World,
             );
 
         var it = self.level.thrones.const_iterator();
@@ -378,6 +400,7 @@ pub const App = struct {
                 position,
                 0.5,
                 .WHITE,
+                .World,
             );
         }
     }

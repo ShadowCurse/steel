@@ -7,10 +7,12 @@ uniform vec3 color;
 uniform vec2 uv_scale;
 uniform vec2 uv_offset;
 
+uniform vec2 texture_size;
+
 uniform sampler2D font_texture;
 
 void main() {
-    vec2 size = vec2(512, 512);
+    vec2 size = texture_size;
 
     vec2 uv_offset = uv_offset / size;
     vec2 uv_scale = uv_scale / size;

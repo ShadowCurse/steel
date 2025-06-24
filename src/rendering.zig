@@ -8,6 +8,7 @@ const assets = @import("assets.zig");
 const Font = @import("font.zig");
 const Level = @import("level.zig");
 const Camera = @import("camera.zig");
+const Platform = @import("platform.zig");
 
 const FileMem = @import("memory.zig").FileMem;
 const Mesh = @import("mesh.zig");
@@ -37,7 +38,12 @@ pub const Renderer = struct {
         material: assets.Material,
     };
 
+    pub const RenderCharMode = enum {
+        World,
+        Screen,
+    };
     const RenderCharInfo = struct {
+        mode: RenderCharMode,
         position: math.Vec3,
         color: math.Color3,
         width: f32,
@@ -89,6 +95,7 @@ pub const Renderer = struct {
         position: math.Vec3,
         size: f32,
         color: math.Color3,
+        mode: RenderCharMode,
     ) void {
         const font = assets.fonts.getPtrConst(.Default);
         const scale = size / font.size;
@@ -120,6 +127,7 @@ pub const Renderer = struct {
             const char_position = char_origin.add(char_offset.mul_f32(scale));
 
             const render_char_info = RenderCharInfo{
+                .mode = mode,
                 .position = char_position,
                 .color = color,
                 .width = char_info.width * scale,
@@ -612,6 +620,7 @@ pub const DebugGridShader = struct {
 
 pub const GpuFont = struct {
     texture: u32,
+    texture_size: if (builtin.target.os.tag == .emscripten) math.Vec2 else void,
 
     const Self = @This();
 
@@ -620,9 +629,9 @@ pub const GpuFont = struct {
         gl.glGenTextures(1, &texture);
         gl.glBindTexture(gl.GL_TEXTURE_2D, texture);
 
-        gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_WRAP_S, gl.GL_REPEAT);
-        gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_WRAP_T, gl.GL_REPEAT);
-        gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MIN_FILTER, gl.GL_LINEAR_MIPMAP_LINEAR);
+        gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_WRAP_S, gl.GL_CLAMP_TO_EDGE);
+        gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_WRAP_T, gl.GL_CLAMP_TO_EDGE);
+        gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MIN_FILTER, gl.GL_LINEAR);
         gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MAG_FILTER, gl.GL_LINEAR);
 
         gl.glTexImage2D(
@@ -636,11 +645,18 @@ pub const GpuFont = struct {
             gl.GL_UNSIGNED_BYTE,
             @ptrCast(font.bitmap.ptr),
         );
-        gl.glGenerateMipmap(gl.GL_TEXTURE_2D);
-        log.info(@src(), "gpu font texture: {d}", .{texture});
-        return .{
-            .texture = texture,
-        };
+
+        if (builtin.target.os.tag == .emscripten) {
+            return .{
+                .texture = texture,
+                .texture_size = math.vec2(Font.BITMAP_WIDTH, @floatFromInt(font.bitmap_height)),
+            };
+        } else {
+            return .{
+                .texture = texture,
+                .texture_size = {},
+            };
+        }
     }
 };
 
@@ -650,10 +666,18 @@ pub const TextShader = struct {
     view: i32,
     projection: i32,
     model: i32,
+
+    window_size: i32,
+    position: i32,
+    size: i32,
+
     color: i32,
+    mode: i32,
+
     uv_scale: i32,
     uv_offset: i32,
 
+    texture_size: if (builtin.target.os.tag == .emscripten) i32 else void,
     buffer: if (builtin.target.os.tag == .emscripten) u32 else void,
     vertex_array: if (builtin.target.os.tag == .emscripten) u32 else void,
 
@@ -668,7 +692,14 @@ pub const TextShader = struct {
         const view = shader.get_uniform_location("view");
         const projection = shader.get_uniform_location("projection");
         const model = shader.get_uniform_location("model");
+
+        const window_size = shader.get_uniform_location("window_size");
+        const position = shader.get_uniform_location("position");
+        const size = shader.get_uniform_location("size");
+
         const color = shader.get_uniform_location("color");
+        const mode = shader.get_uniform_location("mode");
+
         const uv_scale = shader.get_uniform_location("uv_scale");
         const uv_offset = shader.get_uniform_location("uv_offset");
 
@@ -703,14 +734,26 @@ pub const TextShader = struct {
             gl.glVertexAttribPointer(1, 2, gl.GL_FLOAT, gl.GL_FALSE, @sizeOf(PUV), @ptrFromInt(3 * @sizeOf(f32)));
             gl.glEnableVertexAttribArray(0);
             gl.glEnableVertexAttribArray(1);
+
+            const texture_size = shader.get_uniform_location("texture_size");
+
             return .{
                 .shader = shader,
                 .view = view,
                 .projection = projection,
                 .model = model,
+
+                .window_size = window_size,
+                .position = position,
+                .size = size,
+
                 .color = color,
+                .mode = mode,
+
                 .uv_scale = uv_scale,
                 .uv_offset = uv_offset,
+
+                .texture_size = texture_size,
                 .buffer = buffer,
                 .vertex_array = vertex_array,
             };
@@ -720,9 +763,18 @@ pub const TextShader = struct {
                 .view = view,
                 .projection = projection,
                 .model = model,
+
+                .window_size = window_size,
+                .position = position,
+                .size = size,
+
                 .color = color,
+                .mode = mode,
+
                 .uv_scale = uv_scale,
                 .uv_offset = uv_offset,
+
+                .texture_size = {},
                 .buffer = {},
                 .vertex_array = {},
             };
@@ -734,9 +786,12 @@ pub const TextShader = struct {
     }
 
     pub fn set_font(self: *const Self, font: *const GpuFont) void {
-        _ = self;
         gl.glActiveTexture(gl.GL_TEXTURE0);
         gl.glBindTexture(gl.GL_TEXTURE_2D, font.texture);
+
+        if (builtin.target.os.tag == .emscripten) {
+            gl.glUniform2f(self.texture_size, font.texture_size.x, font.texture_size.y);
+        }
     }
 
     pub fn set_char_info(
@@ -744,12 +799,23 @@ pub const TextShader = struct {
         camera: *const Camera,
         char_info: *const Renderer.RenderCharInfo,
     ) void {
-        const transform = math.Mat4.IDENDITY
-            .translate(char_info.position)
-            .scale(.{ .x = char_info.width, .y = char_info.height });
-        gl.glUniformMatrix4fv(self.view, 1, gl.GL_FALSE, @ptrCast(&camera.view));
-        gl.glUniformMatrix4fv(self.projection, 1, gl.GL_FALSE, @ptrCast(&camera.projection));
-        gl.glUniformMatrix4fv(self.model, 1, gl.GL_FALSE, @ptrCast(&transform));
+        switch (char_info.mode) {
+            .World => {
+                gl.glUniform1i(self.mode, 0);
+                const transform = math.Mat4.IDENDITY
+                    .translate(char_info.position)
+                    .scale(.{ .x = char_info.width, .y = char_info.height });
+                gl.glUniformMatrix4fv(self.view, 1, gl.GL_FALSE, @ptrCast(&camera.view));
+                gl.glUniformMatrix4fv(self.projection, 1, gl.GL_FALSE, @ptrCast(&camera.projection));
+                gl.glUniformMatrix4fv(self.model, 1, gl.GL_FALSE, @ptrCast(&transform));
+            },
+            .Screen => {
+                gl.glUniform1i(self.mode, 1);
+                gl.glUniform2f(self.window_size, Platform.WINDOW_WIDTH, Platform.WINDOW_HEIGHT);
+                gl.glUniform2f(self.position, char_info.position.x, char_info.position.y);
+                gl.glUniform2f(self.size, char_info.width, char_info.height);
+            },
+        }
         gl.glUniform3f(self.color, char_info.color.r, char_info.color.g, char_info.color.b);
         gl.glUniform2f(self.uv_scale, char_info.texture_scale_x, char_info.texture_scale_y);
         gl.glUniform2f(self.uv_offset, char_info.texture_offset_x, char_info.texture_offset_y);

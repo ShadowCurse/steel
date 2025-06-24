@@ -10,6 +10,7 @@ pub const Color3 = extern struct {
 
     pub const WHITE: Color3 = .{.r = 1.0, .g = 1.0, .b = 1.0};
     pub const RED: Color3 = .{.r = 1.0, .g = 0.0, .b = 0.0};
+    pub const GREEN: Color3 = .{.r = 0.0, .g = 1.0, .b = 0.0};
 };
 
 pub const Color4 = extern struct {
