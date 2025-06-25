@@ -59,7 +59,7 @@ pub fn reset() void {
     gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT);
 }
 
-pub fn add_mesh_draw(
+pub fn draw_mesh(
     mesh: *const gpu.Mesh,
     model: math.Mat4,
     material: assets.Material,
@@ -74,7 +74,7 @@ pub fn add_mesh_draw(
     };
 }
 
-pub fn add_text_draw(
+pub fn draw_text(
     text: []const u8,
     position: math.Vec3,
     size: f32,

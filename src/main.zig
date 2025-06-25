@@ -294,7 +294,7 @@ pub const App = struct {
                                 }
                             }
                         }
-                        Renderer.add_mesh_draw(
+                        Renderer.draw_mesh(
                             Assets.gpu_meshes.getPtrConst(model_type),
                             transform,
                             material,
@@ -315,7 +315,7 @@ pub const App = struct {
                     @as(f32, @floatFromInt(enemy.max_hp));
                 material.albedo = Level.Enemy.NO_HP_COLOR.lerp(material.albedo, t);
 
-                Renderer.add_mesh_draw(
+                Renderer.draw_mesh(
                     Assets.gpu_meshes.getPtrConst(.Enemy),
                     transform,
                     material,
@@ -332,7 +332,7 @@ pub const App = struct {
                         const t = @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(path.len));
                         material.albedo = material.albedo.lerp(.{ .r = 1.0 }, t);
 
-                        Renderer.add_mesh_draw(
+                        Renderer.draw_mesh(
                             Assets.gpu_meshes.getPtrConst(.Enemy),
                             transform,
                             material,
@@ -344,7 +344,7 @@ pub const App = struct {
     }
 
     pub fn draw_ui(self: *Self) void {
-        Renderer.add_text_draw(
+        Renderer.draw_text(
             "TEST",
             .{ .x = -2.0, .y = -4.0, .z = 2.0 },
             1.0,
@@ -357,7 +357,7 @@ pub const App = struct {
             "Crystals: {d}",
             .{self.current_crystals},
         ) catch unreachable;
-        Renderer.add_text_draw(
+        Renderer.draw_text(
             c,
             .{ .x = -100.0, .y = 650.0 },
             64.0,
@@ -366,7 +366,7 @@ pub const App = struct {
         );
 
         if (self.lost)
-            Renderer.add_text_draw(
+            Renderer.draw_text(
                 "LOST",
                 .{ .x = -2.0, .y = 2.0, .z = 2.0 },
                 1.0,
@@ -383,7 +383,7 @@ pub const App = struct {
                 "HP: {d}",
                 .{throne.hp},
             ) catch unreachable;
-            Renderer.add_text_draw(
+            Renderer.draw_text(
                 hp,
                 position,
                 0.5,
