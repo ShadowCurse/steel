@@ -6,15 +6,8 @@ const gl = @import("bindings/gl.zig");
 const cimgui = @import("bindings/cimgui.zig");
 
 const math = @import("math.zig");
-const Assets = @import("assets.zig");
 const events = @import("events.zig");
-
-const rendering = @import("rendering.zig");
-const Renderer = rendering.Renderer;
-const MeshShader = rendering.MeshShader;
-const DebugGridShader = rendering.DebugGridShader;
-const GpuMesh = rendering.GpuMesh;
-const DebugGrid = rendering.DebugGrid;
+const shaders = @import("shaders.zig");
 
 const memory = @import("memory.zig");
 const FixedArena = memory.FixedArena;
@@ -28,6 +21,8 @@ const Level = @import("level.zig");
 const Mesh = @import("mesh.zig");
 const Camera = @import("camera.zig");
 const Platform = @import("platform.zig");
+const Renderer = @import("renderer.zig");
+const Assets = @import("assets.zig");
 const BoundedArray = std.BoundedArray;
 
 const Input = @import("input.zig");
@@ -45,6 +40,7 @@ pub const os = if (builtin.os.tag != .emscripten) std.os else struct {
 
 pub fn main() !void {
     Platform.init();
+    Renderer.init();
 
     var app: App = .{};
     try app.init();
@@ -77,8 +73,6 @@ pub const App = struct {
     current_crystals: u32 = 0,
     lost: bool = false,
 
-    renderer: Renderer = undefined,
-
     game_mode: GameMode = .Paused,
     input_mode: InputMode = .Selection,
     show_grid: bool = true,
@@ -100,26 +94,21 @@ pub const App = struct {
         Placement,
     };
 
-    const LIGHTS_POSITION: [MeshShader.NUM_LIGHTS]math.Vec3 = .{
-        .{ .x = 1.0, .y = 1.0, .z = 1.0 },
-        .{ .x = -1.0, .y = 1.0, .z = 1.0 },
-        .{ .x = 1.0, .y = -1.0, .z = 1.0 },
-        .{ .x = -1.0, .y = -1.0, .z = 1.0 },
-    };
-    const LIGHTS_COLOR: [MeshShader.NUM_LIGHTS]math.Color3 = .{
-        .{ .r = 1.0 },
-        .{ .g = 1.0 },
-        .{ .b = 1.0 },
-        .{ .r = 1.0, .g = 1.0, .b = 1.0 },
-    };
-    const DIRECT_LIGHT_DIRECTION: math.Vec3 = .{ .x = -0.5, .y = -0.5, .z = -1.0 };
-    const DIRECT_LIGHT_COLOR: math.Color3 = .{ .r = 1.0, .g = 1.0, .b = 1.0 };
-
-    const ENVIRONMENT: rendering.Environment = .{
-        .lights_position = LIGHTS_POSITION,
-        .lights_color = LIGHTS_COLOR,
-        .direct_light_direction = DIRECT_LIGHT_DIRECTION,
-        .direct_light_color = DIRECT_LIGHT_COLOR,
+    const ENVIRONMENT: shaders.MeshShader.Environment = .{
+        .lights_position = .{
+            .{ .x = 1.0, .y = 1.0, .z = 1.0 },
+            .{ .x = -1.0, .y = 1.0, .z = 1.0 },
+            .{ .x = 1.0, .y = -1.0, .z = 1.0 },
+            .{ .x = -1.0, .y = -1.0, .z = 1.0 },
+        },
+        .lights_color = .{
+            .{ .r = 1.0 },
+            .{ .g = 1.0 },
+            .{ .b = 1.0 },
+            .{ .r = 1.0, .g = 1.0, .b = 1.0 },
+        },
+        .direct_light_direction = .{ .x = -0.5, .y = -0.5, .z = -1.0 },
+        .direct_light_color = .{ .r = 1.0, .g = 1.0, .b = 1.0 },
     };
 
     const Self = @This();
@@ -146,7 +135,6 @@ pub const App = struct {
             .top_down = true,
         };
 
-        self.renderer = .init();
         self.floating_camera = floating_camera;
         self.topdown_camera = topdown_camera;
 
@@ -216,8 +204,8 @@ pub const App = struct {
 
         self.prepare_imgui_frame();
         {
-            self.renderer.reset();
-            defer self.renderer.render(camera, &Self.ENVIRONMENT);
+            Renderer.reset();
+            defer Renderer.render(camera, &Self.ENVIRONMENT);
 
             self.draw_level(dt);
             self.draw_ui();
@@ -306,7 +294,7 @@ pub const App = struct {
                                 }
                             }
                         }
-                        self.renderer.add_mesh_draw(
+                        Renderer.add_mesh_draw(
                             Assets.gpu_meshes.getPtrConst(model_type),
                             transform,
                             material,
@@ -327,7 +315,7 @@ pub const App = struct {
                     @as(f32, @floatFromInt(enemy.max_hp));
                 material.albedo = Level.Enemy.NO_HP_COLOR.lerp(material.albedo, t);
 
-                self.renderer.add_mesh_draw(
+                Renderer.add_mesh_draw(
                     Assets.gpu_meshes.getPtrConst(.Enemy),
                     transform,
                     material,
@@ -344,7 +332,7 @@ pub const App = struct {
                         const t = @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(path.len));
                         material.albedo = material.albedo.lerp(.{ .r = 1.0 }, t);
 
-                        self.renderer.add_mesh_draw(
+                        Renderer.add_mesh_draw(
                             Assets.gpu_meshes.getPtrConst(.Enemy),
                             transform,
                             material,
@@ -356,7 +344,7 @@ pub const App = struct {
     }
 
     pub fn draw_ui(self: *Self) void {
-        self.renderer.add_text_draw(
+        Renderer.add_text_draw(
             "TEST",
             .{ .x = -2.0, .y = -4.0, .z = 2.0 },
             1.0,
@@ -369,7 +357,7 @@ pub const App = struct {
             "Crystals: {d}",
             .{self.current_crystals},
         ) catch unreachable;
-        self.renderer.add_text_draw(
+        Renderer.add_text_draw(
             c,
             .{ .x = -100.0, .y = 650.0 },
             64.0,
@@ -378,7 +366,7 @@ pub const App = struct {
         );
 
         if (self.lost)
-            self.renderer.add_text_draw(
+            Renderer.add_text_draw(
                 "LOST",
                 .{ .x = -2.0, .y = 2.0, .z = 2.0 },
                 1.0,
@@ -395,7 +383,7 @@ pub const App = struct {
                 "HP: {d}",
                 .{throne.hp},
             ) catch unreachable;
-            self.renderer.add_text_draw(
+            Renderer.add_text_draw(
                 hp,
                 position,
                 0.5,
@@ -451,10 +439,10 @@ pub const App = struct {
         }
 
         if (cimgui.igCollapsingHeader_BoolPtr("Debug grid", &open, 0)) {
-            _ = cimgui.igCheckbox("Enabled", &self.renderer.show_debug_grid);
+            _ = cimgui.igCheckbox("Enabled", &Renderer.show_debug_grid);
             _ = cimgui.igDragFloat(
                 "scale",
-                &self.renderer.debug_grid_scale,
+                &Renderer.debug_grid_scale,
                 0.1,
                 1.0,
                 100.0,

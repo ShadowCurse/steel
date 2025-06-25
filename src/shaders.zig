@@ -1,192 +1,15 @@
 const std = @import("std");
 const builtin = @import("builtin");
-const log = @import("log.zig");
 const gl = @import("bindings/gl.zig");
+const log = @import("log.zig");
 const math = @import("math.zig");
 const assets = @import("assets.zig");
+const gpu = @import("gpu.zig");
 
-const Font = @import("font.zig");
-const Level = @import("level.zig");
 const Camera = @import("camera.zig");
 const Platform = @import("platform.zig");
-
+const Renderer = @import("renderer.zig");
 const FileMem = @import("memory.zig").FileMem;
-const Mesh = @import("mesh.zig");
-
-pub const Environment = struct {
-    lights_position: [MeshShader.NUM_LIGHTS]math.Vec3,
-    lights_color: [MeshShader.NUM_LIGHTS]math.Color3,
-    direct_light_direction: math.Vec3,
-    direct_light_color: math.Color3,
-};
-
-pub const Renderer = struct {
-    mesh_shader: MeshShader,
-    mesh_infos: std.BoundedArray(RenderMeshInfo, 128) = .{},
-
-    text_shader: TextShader = undefined,
-    char_infos: std.BoundedArray(RenderCharInfo, 128) = .{},
-
-    // debug things
-    show_debug_grid: bool = true,
-    debug_grid_scale: f32 = 10.0,
-    debug_grid_shader: DebugGridShader = undefined,
-
-    const RenderMeshInfo = struct {
-        mesh: *const GpuMesh,
-        model: math.Mat4,
-        material: assets.Material,
-    };
-
-    pub const RenderCharMode = enum {
-        World,
-        Screen,
-    };
-    const RenderCharInfo = struct {
-        mode: RenderCharMode,
-        position: math.Vec3,
-        color: math.Color3,
-        width: f32,
-        height: f32,
-        texture_scale_x: f32 = 0.0,
-        texture_scale_y: f32 = 0.0,
-        texture_offset_x: f32 = 0.0,
-        texture_offset_y: f32 = 0.0,
-    };
-
-    const Self = @This();
-
-    pub fn init() Self {
-        return .{
-            .mesh_shader = .init(),
-            .text_shader = .init(),
-            .debug_grid_shader = .init(),
-        };
-    }
-
-    pub fn reset(self: *Self) void {
-        self.mesh_infos.clear();
-        self.char_infos.clear();
-
-        gl.glClearDepth(0.0);
-        gl.glClearColor(0.0, 0.0, 0.0, 1.0);
-        gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT);
-    }
-
-    pub fn add_mesh_draw(
-        self: *Self,
-        mesh: *const GpuMesh,
-        model: math.Mat4,
-        material: assets.Material,
-    ) void {
-        const mesh_info = RenderMeshInfo{
-            .mesh = mesh,
-            .model = model,
-            .material = material,
-        };
-        self.mesh_infos.append(mesh_info) catch {
-            log.warn(@src(), "Cannot add more meshes to draw queue", .{});
-        };
-    }
-
-    pub fn add_text_draw(
-        self: *Self,
-        text: []const u8,
-        position: math.Vec3,
-        size: f32,
-        color: math.Color3,
-        mode: RenderCharMode,
-    ) void {
-        const font = assets.fonts.getPtrConst(.Default);
-        const scale = size / font.size;
-        const font_scale = scale * font.scale();
-        var offset: math.Vec3 = .{};
-
-        for (text, 0..) |c, i| {
-            var char = c;
-            const char_info = if (font.get_char_info(char)) |ci| blk: {
-                break :blk ci;
-            } else blk: {
-                log.warn(@src(), "Trying to get info about unknown character: {d}", .{char});
-                char = '?';
-                break :blk font.get_char_info(char).?;
-            };
-            const char_kern = if (0 < i) blk: {
-                const prev_char = text[i - 1];
-                break :blk font.get_kerning(prev_char, char);
-            } else blk: {
-                break :blk 0.0;
-            };
-
-            offset.x += char_kern * font_scale;
-            const char_origin = position.add(offset);
-            const char_offset = math.Vec3{
-                .x = char_info.x_offset + char_info.width * 0.5,
-                .y = -char_info.y_offset - char_info.height * 0.5,
-            };
-            const char_position = char_origin.add(char_offset.mul_f32(scale));
-
-            const render_char_info = RenderCharInfo{
-                .mode = mode,
-                .position = char_position,
-                .color = color,
-                .width = char_info.width * scale,
-                .height = char_info.height * scale,
-                .texture_scale_x = char_info.width,
-                .texture_scale_y = char_info.height,
-                .texture_offset_x = char_info.texture_offset_x,
-                .texture_offset_y = char_info.texture_offset_y,
-            };
-
-            self.char_infos.append(render_char_info) catch {
-                log.warn(@src(), "Cannot add more chars to draw queue", .{});
-                return;
-            };
-
-            offset.x += char_info.x_advance * scale;
-        }
-    }
-
-    pub fn render(
-        self: *const Self,
-        camera: *const Camera,
-        environment: *const Environment,
-    ) void {
-        self.mesh_shader.use();
-        self.mesh_shader.set_scene_params(
-            &camera.view,
-            &camera.position,
-            &camera.projection,
-            &environment.lights_position,
-            &environment.lights_color,
-            &environment.direct_light_direction,
-            &environment.direct_light_color,
-        );
-        for (self.mesh_infos.slice()) |*mi| {
-            self.mesh_shader.set_mesh_params(&mi.model, &mi.material);
-            mi.mesh.draw();
-        }
-
-        if (self.show_debug_grid) {
-            self.debug_grid_shader.setup(
-                &camera.view,
-                &camera.projection,
-                &camera.inverse_view,
-                &camera.inverse_projection,
-                self.debug_grid_scale,
-                &Level.LIMITS,
-            );
-            self.debug_grid_shader.draw();
-        }
-
-        self.text_shader.use();
-        self.text_shader.set_font(assets.gpu_fonts.getPtrConst(.Default));
-        for (self.char_infos.slice()) |*ci| {
-            self.text_shader.set_char_info(camera, ci);
-            self.text_shader.draw();
-        }
-    }
-};
 
 pub const Shader = struct {
     vertex_shader: u32,
@@ -308,6 +131,13 @@ pub const MeshShader = struct {
 
     pub const NUM_LIGHTS = 4;
 
+    pub const Environment = struct {
+        lights_position: [MeshShader.NUM_LIGHTS]math.Vec3,
+        lights_color: [MeshShader.NUM_LIGHTS]math.Color3,
+        direct_light_direction: math.Vec3,
+        direct_light_color: math.Color3,
+    };
+
     const Self = @This();
 
     pub fn init() Self {
@@ -355,27 +185,24 @@ pub const MeshShader = struct {
         camera_view: *const math.Mat4,
         camera_position: *const math.Vec3,
         camera_projection: *const math.Mat4,
-        lights_position: *const [NUM_LIGHTS]math.Vec3,
-        lights_color: *const [NUM_LIGHTS]math.Color3,
-        direct_light_direction: *const math.Vec3,
-        direct_light_color: *const math.Color3,
+        environment: *const Self.Environment,
     ) void {
         gl.glUniformMatrix4fv(self.view_loc, 1, gl.GL_FALSE, @ptrCast(camera_view));
         gl.glUniformMatrix4fv(self.projection_loc, 1, gl.GL_FALSE, @ptrCast(camera_projection));
         gl.glUniform3f(self.camera_pos_loc, camera_position.x, camera_position.y, camera_position.z);
-        gl.glUniform3fv(self.lights_pos_loc, NUM_LIGHTS, @ptrCast(lights_position));
-        gl.glUniform3fv(self.lights_color_loc, NUM_LIGHTS, @ptrCast(lights_color));
+        gl.glUniform3fv(self.lights_pos_loc, NUM_LIGHTS, @ptrCast(&environment.lights_position));
+        gl.glUniform3fv(self.lights_color_loc, NUM_LIGHTS, @ptrCast(&environment.lights_color));
         gl.glUniform3f(
             self.direct_light_direction,
-            direct_light_direction.x,
-            direct_light_direction.y,
-            direct_light_direction.z,
+            environment.direct_light_direction.x,
+            environment.direct_light_direction.y,
+            environment.direct_light_direction.z,
         );
         gl.glUniform3f(
             self.direct_light_color,
-            direct_light_color.r,
-            direct_light_color.g,
-            direct_light_color.b,
+            environment.direct_light_color.r,
+            environment.direct_light_color.g,
+            environment.direct_light_color.b,
         );
     }
 
@@ -429,61 +256,6 @@ pub const MeshShader = struct {
         gl.glUniform1f(self.metallic_loc, metallic);
         gl.glUniform1f(self.roughness_loc, roughness);
         gl.glUniform1f(self.ao_loc, ao);
-    }
-};
-
-pub const GpuMesh = struct {
-    vertex_buffer: u32,
-    index_buffer: u32,
-    n_indices: i32,
-    vertex_array: u32,
-
-    const Self = @This();
-
-    pub fn init(VERTEX_TYPE: type, vertices: []const VERTEX_TYPE, indices: []const u32) Self {
-        var vertex_buffer: u32 = undefined;
-        gl.glGenBuffers(1, &vertex_buffer);
-        gl.glBindBuffer(gl.GL_ARRAY_BUFFER, vertex_buffer);
-        gl.glBufferData(
-            gl.GL_ARRAY_BUFFER,
-            @intCast(@sizeOf(VERTEX_TYPE) * vertices.len),
-            vertices.ptr,
-            gl.GL_STATIC_DRAW,
-        );
-
-        var index_buffer: u32 = undefined;
-        gl.glGenBuffers(1, &index_buffer);
-        gl.glBindBuffer(gl.GL_ELEMENT_ARRAY_BUFFER, index_buffer);
-        gl.glBufferData(
-            gl.GL_ELEMENT_ARRAY_BUFFER,
-            @intCast(@sizeOf(u32) * indices.len),
-            indices.ptr,
-            gl.GL_STATIC_DRAW,
-        );
-        const n_indices: i32 = @intCast(indices.len);
-
-        var vertex_array: u32 = undefined;
-        gl.glGenVertexArrays(1, &vertex_array);
-        gl.glBindVertexArray(vertex_array);
-        gl.glBindBuffer(gl.GL_ARRAY_BUFFER, vertex_buffer);
-        VERTEX_TYPE.set_attributes();
-
-        return .{
-            .vertex_buffer = vertex_buffer,
-            .index_buffer = index_buffer,
-            .n_indices = n_indices,
-            .vertex_array = vertex_array,
-        };
-    }
-
-    pub fn from_mesh(mesh: *const Mesh) Self {
-        return Self.init(Mesh.Vertex, mesh.vertices, mesh.indices);
-    }
-
-    pub fn draw(self: *const Self) void {
-        gl.glBindVertexArray(self.vertex_array);
-        gl.glBindBuffer(gl.GL_ELEMENT_ARRAY_BUFFER, self.index_buffer);
-        gl.glDrawElements(gl.GL_TRIANGLES, self.n_indices, gl.GL_UNSIGNED_INT, null);
     }
 };
 
@@ -618,48 +390,6 @@ pub const DebugGridShader = struct {
     }
 };
 
-pub const GpuFont = struct {
-    texture: u32,
-    texture_size: if (builtin.target.os.tag == .emscripten) math.Vec2 else void,
-
-    const Self = @This();
-
-    pub fn from_font(font: *const Font) Self {
-        var texture: u32 = undefined;
-        gl.glGenTextures(1, &texture);
-        gl.glBindTexture(gl.GL_TEXTURE_2D, texture);
-
-        gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_WRAP_S, gl.GL_CLAMP_TO_EDGE);
-        gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_WRAP_T, gl.GL_CLAMP_TO_EDGE);
-        gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MIN_FILTER, gl.GL_LINEAR);
-        gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MAG_FILTER, gl.GL_LINEAR);
-
-        gl.glTexImage2D(
-            gl.GL_TEXTURE_2D,
-            0,
-            gl.GL_ALPHA,
-            Font.BITMAP_WIDTH,
-            @intCast(font.bitmap_height),
-            0,
-            gl.GL_ALPHA,
-            gl.GL_UNSIGNED_BYTE,
-            @ptrCast(font.bitmap.ptr),
-        );
-
-        if (builtin.target.os.tag == .emscripten) {
-            return .{
-                .texture = texture,
-                .texture_size = math.vec2(Font.BITMAP_WIDTH, @floatFromInt(font.bitmap_height)),
-            };
-        } else {
-            return .{
-                .texture = texture,
-                .texture_size = {},
-            };
-        }
-    }
-};
-
 pub const TextShader = struct {
     shader: Shader,
 
@@ -785,7 +515,7 @@ pub const TextShader = struct {
         self.shader.use();
     }
 
-    pub fn set_font(self: *const Self, font: *const GpuFont) void {
+    pub fn set_font(self: *const Self, font: *const gpu.Font) void {
         gl.glActiveTexture(gl.GL_TEXTURE0);
         gl.glBindTexture(gl.GL_TEXTURE_2D, font.texture);
 

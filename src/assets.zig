@@ -2,6 +2,8 @@ const std = @import("std");
 const log = @import("log.zig");
 const math = @import("math.zig");
 const memory = @import("memory.zig");
+const gpu = @import("gpu.zig");
+
 const cgltf = @import("bindings/cgltf.zig");
 const stb = @import("bindings/stb.zig");
 
@@ -13,14 +15,7 @@ const Vec4 = math.Vec4;
 const Vec3 = math.Vec3;
 const Vec2 = math.Vec2;
 
-const rendering = @import("rendering.zig");
-const GpuMesh = rendering.GpuMesh;
-const GpuFont = rendering.GpuFont;
-
 const Font = @import("font.zig");
-const ALL_CHARS = Font.ALL_CHARS;
-const Kerning = Font.Kerning;
-const Char = Font.CharInfo;
 
 pub const DEFAULT_FONTS_DIR_PATH = "resources/fonts";
 pub const DEFAULT_MESHES_DIR_PATH = "resources/models";
@@ -43,18 +38,18 @@ pub const DEFAULT_PACKED_ASSETS_PATH = "resources/packed.p";
 //   [all vertices]
 //   (align FontInfo)
 //   FontInfos[]
-//   (align CharInfo)
-//   [CharInfo[512], FontInfos.len]
+//   (align CharInfoInfo)
+//   [CharInfoInfo[512], FontInfos.len]
 //   (align KerningInfo)
 //   [KerningInfo[512 * 512], FontInfos.len]
 //   (align 1)
 //   [u8[512 * 512], FontInfos.len]
 // )
 
-pub const GpuMeshes = std.EnumArray(ModelType, GpuMesh);
+pub const GpuMeshes = std.EnumArray(ModelType, gpu.Mesh);
 pub const Materials = std.EnumArray(ModelType, Material);
 pub const Meshes = std.EnumArray(ModelType, Mesh);
-pub const GpuFonts = std.EnumArray(FontType, GpuFont);
+pub const GpuFonts = std.EnumArray(FontType, gpu.Font);
 pub const Fonts = std.EnumArray(FontType, Font);
 
 pub var gpu_meshes: GpuMeshes = undefined;
@@ -76,13 +71,13 @@ pub fn init(mem: []align(4096) const u8) !void {
 
 fn gpu_meshes_from_meshes(m: *const Meshes) void {
     for (std.enums.values(ModelType)) |v| {
-        gpu_meshes.getPtr(v).* = GpuMesh.from_mesh(m.getPtrConst(v));
+        gpu_meshes.getPtr(v).* = gpu.Mesh.from_mesh(m.getPtrConst(v));
     }
 }
 
 fn gpu_fonts_from_fonts(m: *const Fonts) void {
     for (std.enums.values(FontType)) |v| {
-        gpu_fonts.getPtr(v).* = GpuFont.from_font(m.getPtrConst(v));
+        gpu_fonts.getPtr(v).* = gpu.Font.from_font(m.getPtrConst(v));
     }
 }
 
@@ -128,8 +123,8 @@ pub const Packer = struct {
     vertices: std.ArrayListUnmanaged(Mesh.Vertex) = .{},
 
     font_infos: std.EnumArray(FontType, FontInfo) = undefined,
-    chars: std.ArrayListUnmanaged(Char) = .{},
-    kernings: std.ArrayListUnmanaged(Kerning) = .{},
+    chars: std.ArrayListUnmanaged(Font.CharInfo) = .{},
+    kernings: std.ArrayListUnmanaged(Font.Kerning) = .{},
     font_bitmaps: std.ArrayListUnmanaged(u8) = .{},
 
     const Self = @This();
@@ -340,7 +335,7 @@ pub const Packer = struct {
         const start_chars = self.chars.items.len;
         try self.chars.ensureUnusedCapacity(gpa_alloc, char_info.len);
         for (char_info) |ci| {
-            const c = Char{
+            const c = Font.CharInfo{
                 .texture_offset_x = @floatFromInt(ci.x0),
                 .texture_offset_y = @floatFromInt(ci.y0),
                 .width = @floatFromInt(ci.x1 - ci.x0),
@@ -352,11 +347,11 @@ pub const Packer = struct {
             try self.chars.append(gpa_alloc, c);
         }
 
-        try self.kernings.ensureUnusedCapacity(gpa_alloc, ALL_CHARS.len * ALL_CHARS.len);
-        for (ALL_CHARS) |c1| {
-            for (ALL_CHARS) |c2| {
+        try self.kernings.ensureUnusedCapacity(gpa_alloc, Font.ALL_CHARS.len * Font.ALL_CHARS.len);
+        for (Font.ALL_CHARS) |c1| {
+            for (Font.ALL_CHARS) |c2| {
                 const k = stb.stbtt_GetCodepointKernAdvance(&stb_font, c1, c2);
-                const kerning = Kerning{
+                const kerning = Font.Kerning{
                     .char_1 = c1,
                     .char_2 = c2,
                     .kerning = k,
@@ -394,10 +389,10 @@ pub const Packer = struct {
         total_size += self.vertices.items.len * @sizeOf(Mesh.Vertex);
         total_size = memory.align_up(total_size, @alignOf(FontInfo));
         total_size += Fonts.len * @sizeOf(FontInfo);
-        total_size = memory.align_up(total_size, @alignOf(Char));
-        total_size += self.chars.items.len * @sizeOf(Char);
-        total_size = memory.align_up(total_size, @alignOf(Kerning));
-        total_size += self.kernings.items.len * @sizeOf(Kerning);
+        total_size = memory.align_up(total_size, @alignOf(Font.CharInfo));
+        total_size += self.chars.items.len * @sizeOf(Font.CharInfo);
+        total_size = memory.align_up(total_size, @alignOf(Font.Kerning));
+        total_size += self.kernings.items.len * @sizeOf(Font.Kerning);
         total_size = memory.align_up(total_size, @alignOf(u8));
         total_size += self.font_bitmaps.items.len * @sizeOf(u8);
         log.info(@src(), "Total bytes for packed data: {d}", .{total_size});
@@ -412,8 +407,8 @@ pub const Packer = struct {
         _ = try arena_alloc.dupe(Mesh.Index, self.indices.items);
         _ = try arena_alloc.dupe(Mesh.Vertex, self.vertices.items);
         _ = try arena_alloc.dupe(FontInfo, &self.font_infos.values);
-        _ = try arena_alloc.dupe(Char, self.chars.items);
-        _ = try arena_alloc.dupe(Kerning, self.kernings.items);
+        _ = try arena_alloc.dupe(Font.CharInfo, self.chars.items);
+        _ = try arena_alloc.dupe(Font.Kerning, self.kernings.items);
         _ = try arena_alloc.dupe(u8, self.font_bitmaps.items);
 
         const file = try std.fs.cwd().createFile(path, .{});
@@ -473,18 +468,18 @@ pub fn unpack(mem: []align(4096) const u8) !UnpackedAssets {
     }
 
     mem_ptr += @sizeOf(FontInfo) * Fonts.len;
-    mem_ptr = memory.align_up(mem_ptr, @alignOf(Char));
-    var chars: []const Char = undefined;
+    mem_ptr = memory.align_up(mem_ptr, @alignOf(Font.CharInfo));
+    var chars: []const Font.CharInfo = undefined;
     chars.ptr = @ptrFromInt(mem_ptr);
     chars.len = total_chars_len;
 
-    mem_ptr += @sizeOf(Char) * total_chars_len;
-    mem_ptr = memory.align_up(mem_ptr, @alignOf(Kerning));
-    var kernings: []const Kerning = undefined;
+    mem_ptr += @sizeOf(Font.CharInfo) * total_chars_len;
+    mem_ptr = memory.align_up(mem_ptr, @alignOf(Font.Kerning));
+    var kernings: []const Font.Kerning = undefined;
     kernings.ptr = @ptrFromInt(mem_ptr);
-    kernings.len = Fonts.len * ALL_CHARS.len * ALL_CHARS.len;
+    kernings.len = Fonts.len * Font.ALL_CHARS.len * Font.ALL_CHARS.len;
 
-    mem_ptr += @sizeOf(Kerning) * kernings.len;
+    mem_ptr += @sizeOf(Font.Kerning) * kernings.len;
     mem_ptr = memory.align_up(mem_ptr, @alignOf(u8));
     var bitmaps: []const u8 = undefined;
     bitmaps.ptr = @ptrFromInt(mem_ptr);
@@ -516,12 +511,12 @@ pub fn unpack(mem: []align(4096) const u8) !UnpackedAssets {
             .decent = font_info.decent,
             .line_gap = font_info.line_gap,
             .chars = chars[char_offset..][0..font_info.n_chars],
-            .kerning_table = kernings[kerning_offset..][0 .. ALL_CHARS.len * ALL_CHARS.len],
+            .kerning_table = kernings[kerning_offset..][0 .. Font.ALL_CHARS.len * Font.ALL_CHARS.len],
             .bitmap = bitmaps[bitmap_offset..][0..bitmap_size],
             .bitmap_height = font_info.bitmap_height,
         };
         char_offset += font_info.n_chars;
-        kerning_offset += ALL_CHARS.len * ALL_CHARS.len;
+        kerning_offset += Font.ALL_CHARS.len * Font.ALL_CHARS.len;
         bitmap_offset += bitmap_size;
     }
 
