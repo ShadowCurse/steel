@@ -346,7 +346,7 @@ pub const App = struct {
     pub fn draw_ui(self: *Self) void {
         Renderer.draw_text(
             "TEST",
-            .{ .x = -2.0, .y = -4.0, .z = 2.0 },
+            .{ .x = 0.0, .y = -4.0, .z = 2.0 },
             1.0,
             .GREEN,
             .World,
@@ -359,7 +359,7 @@ pub const App = struct {
         ) catch unreachable;
         Renderer.draw_text(
             c,
-            .{ .x = -100.0, .y = 650.0 },
+            .{ .x = 0.0, .y = 650.0 },
             64.0,
             .WHITE,
             .Screen,
@@ -368,7 +368,7 @@ pub const App = struct {
         if (self.lost)
             Renderer.draw_text(
                 "LOST",
-                .{ .x = -2.0, .y = 2.0, .z = 2.0 },
+                .{ .x = 0.0, .y = 2.0, .z = 2.0 },
                 1.0,
                 .RED,
                 .World,

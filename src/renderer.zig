@@ -129,6 +129,12 @@ pub fn draw_text(
 
         offset.x += char_info.x_advance * scale;
     }
+    // center the text
+    const half_width = offset.x / 2.0;
+    const added_chars =
+        Self.char_infos.slice()[Self.char_infos.slice().len - text.len ..][0..text.len];
+    for (added_chars) |*char_info|
+        char_info.position.x -= half_width;
 }
 
 pub fn render(
