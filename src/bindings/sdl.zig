@@ -6,6 +6,6 @@ const sdl = @cImport({
 });
 pub usingnamespace sdl;
 
-pub fn assert(src: std.builtin.SourceLocation, b: bool) void {
+pub fn assert(comptime src: std.builtin.SourceLocation, b: bool) void {
     log.assert(src, b, "SDL error {s}", .{sdl.SDL_GetError()});
 }
