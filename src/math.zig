@@ -8,9 +8,9 @@ pub const Color3 = extern struct {
     g: f32 = 0.0,
     b: f32 = 0.0,
 
-    pub const WHITE: Color3 = .{.r = 1.0, .g = 1.0, .b = 1.0};
-    pub const RED: Color3 = .{.r = 1.0, .g = 0.0, .b = 0.0};
-    pub const GREEN: Color3 = .{.r = 0.0, .g = 1.0, .b = 0.0};
+    pub const WHITE: Color3 = .{ .r = 1.0, .g = 1.0, .b = 1.0 };
+    pub const RED: Color3 = .{ .r = 1.0, .g = 0.0, .b = 0.0 };
+    pub const GREEN: Color3 = .{ .r = 0.0, .g = 1.0, .b = 0.0 };
 };
 
 pub const Color4 = extern struct {
@@ -19,8 +19,8 @@ pub const Color4 = extern struct {
     b: f32 = 0.0,
     a: f32 = 0.0,
 
-    pub const WHITE: Color4 = .{.r = 1.0, .g = 1.0, .b = 1.0, .a = 1.0};
-    pub const RED: Color3 = .{.r = 1.0, .g = 0.0, .b = 0.0, .a = 1.0};
+    pub const WHITE: Color4 = .{ .r = 1.0, .g = 1.0, .b = 1.0, .a = 1.0 };
+    pub const RED: Color3 = .{ .r = 1.0, .g = 0.0, .b = 0.0, .a = 1.0 };
 
     pub inline fn lerp(start: Color4, end: Color4, t: f32) Color4 {
         return .{
@@ -517,7 +517,7 @@ pub const Quat = struct {
         const self_v3_len_sq = self_v3.len_squared();
         return v3.mul_f32(self.w * self.w - self_v3_len_sq)
             .add(self_v3.mul_f32(2.0 * v3.dot(self_v3)))
-            .add(2.0 * self.w * self_v3.cross(v3));
+            .add(self_v3.cross(v3).mul_f32(2.0 * self.w));
     }
 
     pub inline fn to_mat4(self: Quat) Mat4 {
