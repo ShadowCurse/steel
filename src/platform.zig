@@ -5,6 +5,7 @@ const sdl = @import("bindings/sdl.zig");
 const gl = @import("bindings/gl.zig");
 const cimgui = @import("bindings/cimgui.zig");
 const events = @import("events.zig");
+const math = @import("math.zig");
 
 pub const WINDOW_WIDTH = 1280;
 pub const WINDOW_HEIGHT = 720;
@@ -91,4 +92,14 @@ pub fn imgui_wants_to_handle_events() bool {
 
 pub fn present() void {
     sdl.assert(@src(), sdl.SDL_GL_SwapWindow(window));
+}
+
+pub fn mouse_clip() math.Vec3 {
+    return math.Vec3{
+        .x = (@as(f32, @floatFromInt(mouse_position.x)) /
+            WINDOW_WIDTH * 2.0) - 1.0,
+        .y = -((@as(f32, @floatFromInt(mouse_position.y)) /
+            WINDOW_HEIGHT * 2.0) - 1.0),
+        .z = 1.0,
+    };
 }

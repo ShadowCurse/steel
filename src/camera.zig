@@ -2,6 +2,8 @@ const std = @import("std");
 const cimgui = @import("bindings/cimgui.zig");
 const math = @import("math.zig");
 const events = @import("events.zig");
+
+const Input = @import("input.zig");
 const Platform = @import("platform.zig");
 
 position: math.Vec3 = .{},
@@ -17,6 +19,7 @@ zoom: f32 = 50.0,
 velocity: math.Vec3 = .{},
 speed: f32 = 5.0,
 active: bool = false,
+last_drag_position: ?math.Vec3 = null,
 type: Type = .Free,
 
 view: math.Mat4 = .{},
@@ -104,10 +107,23 @@ pub fn process_input(self: *Self, event: events.Event, dt: f32) void {
 }
 
 pub fn move(self: *Self, dt: f32) void {
-    const rotation = self.rotation_matrix();
-    const velocity = self.velocity.mul_f32(self.speed * dt).extend(1.0);
-    const delta = rotation.mul_vec4(velocity);
-    self.position = self.position.add(delta.shrink());
+    if (self.type == .Game) {
+        const mouse_clip = Platform.mouse_clip();
+        const mouse_xy = self.mouse_to_xy(mouse_clip);
+        if (self.last_drag_position) |ldp| {
+            const diff = ldp.sub(mouse_xy);
+            self.position = self.position.add(diff);
+        }
+        if (Input.mmb_was_pressed)
+            self.last_drag_position = mouse_xy;
+        if (Input.mmb_was_released)
+            self.last_drag_position = null;
+    } else {
+        const rotation = self.rotation_matrix();
+        const velocity = self.velocity.mul_f32(self.speed * dt).extend(1.0);
+        const delta = rotation.mul_vec4(velocity);
+        self.position = self.position.add(delta.shrink());
+    }
 
     self.inverse_view = self.transform();
     self.view = self.inverse_view.inverse();

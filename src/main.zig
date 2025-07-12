@@ -137,7 +137,8 @@ pub const App = struct {
         const free_camera: Camera = .{ .position = .{ .y = -5.0, .z = 5.0 }, .pitch = -1.1 };
         const game_camera: Camera = .{
             .position = .{ .y = -5.0, .z = 5.0 },
-            .pitch = -1.1,
+            .pitch = -1.0,
+            .yaw = -0.5,
             .type = .Game,
         };
 
@@ -175,13 +176,7 @@ pub const App = struct {
         }
         camera.move(dt);
 
-        const mouse_clip = math.Vec3{
-            .x = (@as(f32, @floatFromInt(Platform.mouse_position.x)) /
-                Platform.WINDOW_WIDTH * 2.0) - 1.0,
-            .y = -((@as(f32, @floatFromInt(Platform.mouse_position.y)) /
-                Platform.WINDOW_HEIGHT * 2.0) - 1.0),
-            .z = 1.0,
-        };
+        const mouse_clip = Platform.mouse_clip();
         const mouse_xy = camera.mouse_to_xy(mouse_clip);
 
         const mouse_ray = camera.mouse_to_ray(mouse_clip);
