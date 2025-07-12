@@ -11,7 +11,7 @@ const cimgui = @cImport({
 });
 pub usingnamespace cimgui;
 
-pub fn format(v: anytype) void {
+pub fn format(name: ?[*c]const u8, v: anytype) void {
     const t = @TypeOf(v);
     const type_info = @typeInfo(t);
     switch (type_info) {
@@ -19,6 +19,8 @@ pub fn format(v: anytype) void {
             const child_type_info = @typeInfo(pointer.child);
             switch (child_type_info) {
                 .@"struct" => |s| {
+                    if (name) |n|
+                        _ = cimgui.igSeparatorText(n);
                     const type_fields = s.fields;
                     inline for (type_fields) |field| {
                         switch (field.type) {
@@ -104,15 +106,29 @@ pub fn format(v: anytype) void {
                                     }
                                 }
                             },
-                            else => log.comptime_err(
-                                @src(),
-                                "Cannot format fileld {any} of a type: {any} for cimgui",
-                                .{ field.type, t },
-                            ),
+                            else => format(field.name, &@field(v, field.name)),
                         }
                     }
                 },
-                .@"enum" => {},
+                .@"enum" => |e| {
+                    const size: cimgui.ImVec2 = .{
+                        .x = 0,
+                        .y = e.fields.len * cimgui.igGetTextLineHeightWithSpacing() +
+                            0.25 * cimgui.igGetTextLineHeightWithSpacing(),
+                    };
+                    const list_name: [*c]const u8 = if (name) |n|
+                        n
+                    else
+                        @typeName(t);
+                    // This will return false if the list cannot be seen.
+                    if (cimgui.igBeginListBox(list_name, size)) {
+                        inline for (e.fields) |f| {
+                            if (cimgui.igSelectable_Bool(f.name, @intFromEnum(v.*) == f.value, 0, .{}))
+                                v.* = @enumFromInt(f.value);
+                        }
+                        _ = cimgui.igEndListBox();
+                    }
+                },
                 else => log.comptime_err(
                     @src(),
                     "Cannot format pointer child type: {any} for cimgui",

@@ -65,9 +65,10 @@ pub const App = struct {
 
     assets_file_mem: memory.FileMem = undefined,
 
-    floating_camera: Camera = .{},
     topdown_camera: Camera = .{},
-    use_topdown_camera: bool = false,
+    free_camera: Camera = .{},
+    game_camera: Camera = .{},
+    camera_type: Camera.Type = .Game,
 
     level: Level = .{},
     current_crystals: u32 = 0,
@@ -128,15 +129,21 @@ pub const App = struct {
             memory.FileMem.init(Assets.DEFAULT_PACKED_ASSETS_PATH) catch unreachable;
         Assets.init(self.assets_file_mem.mem) catch unreachable;
 
-        const floating_camera: Camera = .{ .position = .{ .y = -5.0, .z = 5.0 }, .pitch = -1.1 };
         const topdown_camera: Camera = .{
             .position = .{ .z = 10.0 },
             .pitch = -std.math.pi / 2.0,
-            .top_down = true,
+            .type = .TopDown,
+        };
+        const free_camera: Camera = .{ .position = .{ .y = -5.0, .z = 5.0 }, .pitch = -1.1 };
+        const game_camera: Camera = .{
+            .position = .{ .y = -5.0, .z = 5.0 },
+            .pitch = -1.1,
+            .type = .Game,
         };
 
-        self.floating_camera = floating_camera;
+        self.free_camera = free_camera;
         self.topdown_camera = topdown_camera;
+        self.game_camera = game_camera;
 
         self.level.init(self.scratch_allocator.allocator(), self.gpa_allocator.allocator());
     }
@@ -150,10 +157,11 @@ pub const App = struct {
         const imgui_wants_to_handle_events = Platform.imgui_wants_to_handle_events();
         var new_events = Platform.input_events;
 
-        const camera = if (self.use_topdown_camera)
-            &self.topdown_camera
-        else
-            &self.floating_camera;
+        const camera = switch (self.camera_type) {
+            .TopDown => &self.topdown_camera,
+            .Free => &self.free_camera,
+            .Game => &self.game_camera,
+        };
 
         if (imgui_wants_to_handle_events) {
             new_events = &.{};
@@ -414,27 +422,28 @@ pub const App = struct {
         }
 
         if (cimgui.igCollapsingHeader_BoolPtr("Camera", &open, 0)) {
-            _ = cimgui.igSeparatorText("Camera");
-            _ = cimgui.igCheckbox("Use top down camera", &self.use_topdown_camera);
-            _ = cimgui.igSeparatorText(
-                if (!self.use_topdown_camera) "Floating camera +" else "Floating camera",
-            );
+            cimgui.format("Camera type", &self.camera_type);
+
             {
                 cimgui.igPushID_Int(cimgui_id);
                 cimgui_id += 1;
                 defer cimgui.igPopID();
 
-                cimgui.format(&self.floating_camera);
+                cimgui.format("Topdown camera", &self.topdown_camera);
             }
-            _ = cimgui.igSeparatorText(
-                if (self.use_topdown_camera) "Topdown camera +" else "Topdown camera",
-            );
             {
                 cimgui.igPushID_Int(cimgui_id);
                 cimgui_id += 1;
                 defer cimgui.igPopID();
 
-                cimgui.format(&self.topdown_camera);
+                cimgui.format("Floating camera", &self.free_camera);
+            }
+            {
+                cimgui.igPushID_Int(cimgui_id);
+                cimgui_id += 1;
+                defer cimgui.igPopID();
+
+                cimgui.format("Game camera", &self.game_camera);
             }
         }
 
@@ -458,7 +467,7 @@ pub const App = struct {
                 cimgui_id += 1;
                 defer cimgui.igPopID();
 
-                cimgui.format(m.value);
+                cimgui.format(null, m.value);
             }
         }
 
@@ -467,34 +476,10 @@ pub const App = struct {
             &open,
             cimgui.ImGuiTreeNodeFlags_DefaultOpen,
         )) {
-            _ = cimgui.igSeparatorText("Game mode");
-            if (cimgui.igSelectable_Bool("Running", self.game_mode == .Running, 0, .{}))
-                self.game_mode = .Running;
-            if (cimgui.igSelectable_Bool("Paused", self.game_mode == .Paused, 0, .{}))
-                self.game_mode = .Paused;
-
-            _ = cimgui.igSeparatorText("Input mode");
-            if (cimgui.igSelectable_Bool("Game", self.input_mode == .Game, 0, .{}))
-                self.input_mode = .Game;
-            if (cimgui.igSelectable_Bool("Selection", self.input_mode == .Selection, 0, .{}))
-                self.input_mode = .Selection;
-            if (cimgui.igSelectable_Bool("Placement", self.input_mode == .Placement, 0, .{}))
-                self.input_mode = .Placement;
-
+            cimgui.format("Game mode", &self.game_mode);
+            cimgui.format("Input mode", &self.input_mode);
             if (self.input_mode == .Placement) {
-                _ = cimgui.igSeparatorText("Cell type");
-                if (cimgui.igSelectable_Bool("Floor", self.current_cell_type == .Floor, 0, .{}))
-                    self.current_cell_type = .Floor;
-                if (cimgui.igSelectable_Bool("FloorTrap", self.current_cell_type == .FloorTrap, 0, .{}))
-                    self.current_cell_type = .FloorTrap;
-                if (cimgui.igSelectable_Bool("Wall", self.current_cell_type == .Wall, 0, .{}))
-                    self.current_cell_type = .Wall;
-                if (cimgui.igSelectable_Bool("Spawn", self.current_cell_type == .Spawn, 0, .{}))
-                    self.current_cell_type = .Spawn;
-                if (cimgui.igSelectable_Bool("Throne", self.current_cell_type == .Throne, 0, .{}))
-                    self.current_cell_type = .Throne;
-                if (cimgui.igSelectable_Bool("Crystal", self.current_cell_type == .Crystal, 0, .{}))
-                    self.current_cell_type = .Crystal;
+                cimgui.format("Cell type", &self.current_cell_type);
             }
         }
 

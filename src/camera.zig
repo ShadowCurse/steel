@@ -17,7 +17,7 @@ zoom: f32 = 50.0,
 velocity: math.Vec3 = .{},
 speed: f32 = 5.0,
 active: bool = false,
-top_down: bool = false,
+type: Type = .Free,
 
 view: math.Mat4 = .{},
 projection: math.Mat4 = .{},
@@ -28,30 +28,40 @@ const ORIENTATION = math.Quat.from_rotation_axis(.X, .NEG_Z, .Y);
 const SENSITIVITY = 0.5;
 const ORTHO_DEPTH = 100.0;
 
+pub const Type = enum {
+    TopDown,
+    Free,
+    Game,
+};
+
 const Self = @This();
 
 pub fn process_input(self: *Self, event: events.Event, dt: f32) void {
     switch (event) {
         .Keyboard => |key| {
             const value: f32 = if (key.type == .Pressed) 1.0 else 0.0;
-            if (self.top_down) {
-                switch (key.key) {
-                    events.KeybordKeyScancode.W => self.velocity.y = -value,
-                    events.KeybordKeyScancode.S => self.velocity.y = value,
-                    events.KeybordKeyScancode.A => self.velocity.x = -value,
-                    events.KeybordKeyScancode.D => self.velocity.x = value,
-                    else => {},
-                }
-            } else {
-                switch (key.key) {
-                    events.KeybordKeyScancode.W => self.velocity.z = value,
-                    events.KeybordKeyScancode.S => self.velocity.z = -value,
-                    events.KeybordKeyScancode.A => self.velocity.x = -value,
-                    events.KeybordKeyScancode.D => self.velocity.x = value,
-                    events.KeybordKeyScancode.SPACE => self.velocity.y = -value,
-                    events.KeybordKeyScancode.LCTRL => self.velocity.y = value,
-                    else => {},
-                }
+            switch (self.type) {
+                .TopDown => {
+                    switch (key.key) {
+                        events.KeybordKeyScancode.W => self.velocity.y = -value,
+                        events.KeybordKeyScancode.S => self.velocity.y = value,
+                        events.KeybordKeyScancode.A => self.velocity.x = -value,
+                        events.KeybordKeyScancode.D => self.velocity.x = value,
+                        else => {},
+                    }
+                },
+                .Free => {
+                    switch (key.key) {
+                        events.KeybordKeyScancode.W => self.velocity.z = value,
+                        events.KeybordKeyScancode.S => self.velocity.z = -value,
+                        events.KeybordKeyScancode.A => self.velocity.x = -value,
+                        events.KeybordKeyScancode.D => self.velocity.x = value,
+                        events.KeybordKeyScancode.SPACE => self.velocity.y = -value,
+                        events.KeybordKeyScancode.LCTRL => self.velocity.y = value,
+                        else => {},
+                    }
+                },
+                .Game => {},
             }
         },
         .Mouse => |mouse| {
@@ -64,23 +74,27 @@ pub fn process_input(self: *Self, event: events.Event, dt: f32) void {
                 },
                 .Motion => |motion| {
                     if (self.active) {
-                        if (self.top_down) {
-                            self.position.x -= motion.x * Self.SENSITIVITY * dt;
-                            self.position.y += motion.y * Self.SENSITIVITY * dt;
-                        } else {
-                            self.yaw -= motion.x * Self.SENSITIVITY * dt;
-                            self.pitch -= motion.y * Self.SENSITIVITY * dt;
-                            if (math.PI / 2.0 < self.pitch) {
-                                self.pitch = math.PI / 2.0;
-                            }
-                            if (self.pitch < -math.PI / 2.0) {
-                                self.pitch = -math.PI / 2.0;
-                            }
+                        switch (self.type) {
+                            .TopDown => {
+                                self.position.x -= motion.x * Self.SENSITIVITY * dt;
+                                self.position.y += motion.y * Self.SENSITIVITY * dt;
+                            },
+                            .Free => {
+                                self.yaw -= motion.x * Self.SENSITIVITY * dt;
+                                self.pitch -= motion.y * Self.SENSITIVITY * dt;
+                                if (math.PI / 2.0 < self.pitch) {
+                                    self.pitch = math.PI / 2.0;
+                                }
+                                if (self.pitch < -math.PI / 2.0) {
+                                    self.pitch = -math.PI / 2.0;
+                                }
+                            },
+                            .Game => {},
                         }
                     }
                 },
                 .Wheel => |wheel| {
-                    if (self.top_down)
+                    if (self.type == .TopDown)
                         self.position.z -= wheel.amount * Self.SENSITIVITY * 50.0 * dt;
                 },
             }
@@ -97,7 +111,7 @@ pub fn move(self: *Self, dt: f32) void {
 
     self.inverse_view = self.transform();
     self.view = self.inverse_view.inverse();
-    if (self.top_down)
+    if (self.type == .TopDown)
         self.projection = self.orthogonal()
     else
         self.projection = self.perspective();
@@ -141,7 +155,7 @@ pub fn orthogonal(self: *const Self) math.Mat4 {
 }
 
 pub fn mouse_to_ray(self: *const Self, mouse_pos: math.Vec3) math.Ray {
-    const world_near_world = if (self.top_down) blk: {
+    const world_near_world = if (self.type == .TopDown) blk: {
         break :blk self.inverse_view
             .mul(self.inverse_projection)
             .mul_vec4(mouse_pos.extend(1.0))
@@ -159,7 +173,7 @@ pub fn mouse_to_ray(self: *const Self, mouse_pos: math.Vec3) math.Ray {
 }
 
 pub fn mouse_to_xy(self: *const Self, mouse_pos: math.Vec3) math.Vec3 {
-    if (self.top_down) {
+    if (self.type == .TopDown) {
         return self.inverse_view
             .mul(self.inverse_projection)
             .mul_vec4(mouse_pos.extend(1.0))

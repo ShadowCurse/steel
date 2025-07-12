@@ -633,9 +633,7 @@ pub fn imgui_info(
                     "Spawn: {d}",
                     .{i},
                 ) catch unreachable;
-                _ = cimgui.igSeparatorText(label);
-
-                cimgui.format(spawn);
+                cimgui.format(label, spawn);
             }
         }
 
@@ -654,9 +652,7 @@ pub fn imgui_info(
                     "Throne: {d}",
                     .{i},
                 ) catch unreachable;
-                _ = cimgui.igSeparatorText(label);
-
-                cimgui.format(throne);
+                cimgui.format(label, throne);
             }
         }
 
@@ -675,8 +671,7 @@ pub fn imgui_info(
                     "Enemy: {d}",
                     .{i},
                 ) catch unreachable;
-                _ = cimgui.igSeparatorText(label);
-                cimgui.format(enemy);
+                cimgui.format(label, enemy);
             }
         }
 
