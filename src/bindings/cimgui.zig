@@ -129,6 +129,7 @@ pub fn format(name: ?[*c]const u8, v: anytype) void {
                         _ = cimgui.igEndListBox();
                     }
                 },
+                .optional => {},
                 else => log.comptime_err(
                     @src(),
                     "Cannot format pointer child type: {any} for cimgui",
