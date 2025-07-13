@@ -21,12 +21,16 @@ const FontPathsType = std.EnumArray(Assets.FontType, struct { [:0]const u8, f32 
 const FONT_PATHS = FontPathsType.init(.{
     .Default = .{ Assets.DEFAULT_FONTS_DIR_PATH ++ "/Roboto-Regular.ttf", 128.0 },
 });
+const SoundtrackPathsType = std.EnumArray(Assets.SoundtrackType, [:0]const u8);
+const SOUNDTRACK_PATHS = SoundtrackPathsType.init(.{
+    .Background = Assets.DEFAULT_SOUNDTRACK_DIR_PATH ++ "/background.ogg",
+});
 
 pub fn main() !void {
     var gpa = DebugAllocator{};
     const gpa_alloc = gpa.allocator();
 
-    var scratch_allocator = RoundArena.init(try gpa_alloc.alloc(u8, 1 << 20));
+    var scratch_allocator = RoundArena.init(try gpa_alloc.alloc(u8, 1 << 30));
     const scratch_alloc = scratch_allocator.allocator();
 
     var packer: Assets.Packer = .{};
@@ -55,6 +59,19 @@ pub fn main() !void {
             font_type,
         ) catch |e| {
             log.err(@src(), "Error loading font from path: {s}: {}", .{ t[0], e });
+        };
+    }
+    for (0..SoundtrackPathsType.len) |i| {
+        const soundtrack_type = SoundtrackPathsType.Indexer.keyForIndex(i);
+        const path = SOUNDTRACK_PATHS.values[i];
+
+        packer.add_soundtrack(
+            gpa_alloc,
+            scratch_alloc,
+            path,
+            soundtrack_type,
+        ) catch |e| {
+            log.err(@src(), "Error loading soundtrack from path: {s}: {}", .{ path, e });
         };
     }
 

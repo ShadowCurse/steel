@@ -16,10 +16,12 @@ const Vec3 = math.Vec3;
 const Vec2 = math.Vec2;
 
 const Font = @import("font.zig");
+const Audio = @import("audio.zig");
 
 pub const DEFAULT_FONTS_DIR_PATH = "resources/fonts";
 pub const DEFAULT_MESHES_DIR_PATH = "resources/models";
 pub const DEFAULT_PACKED_ASSETS_PATH = "resources/packed.p";
+pub const DEFAULT_SOUNDTRACK_DIR_PATH = "resources/soundtracks";
 
 // In memory this will be
 // (
@@ -51,12 +53,14 @@ pub const Materials = std.EnumArray(ModelType, Material);
 pub const Meshes = std.EnumArray(ModelType, Mesh);
 pub const GpuFonts = std.EnumArray(FontType, gpu.Font);
 pub const Fonts = std.EnumArray(FontType, Font);
+pub const Soundtracks = std.EnumArray(SoundtrackType, Audio.Soundtrack);
 
 pub var gpu_meshes: GpuMeshes = undefined;
 pub var materials: Materials = undefined;
 pub var meshes: Meshes = undefined;
 pub var gpu_fonts: GpuFonts = undefined;
 pub var fonts: Fonts = undefined;
+pub var soundtracks: Soundtracks = undefined;
 
 const Self = @This();
 
@@ -67,6 +71,7 @@ pub fn init(mem: []align(4096) const u8) !void {
     materials = unpack_result.mats;
     meshes = unpack_result.meshes;
     fonts = unpack_result.fonts;
+    soundtracks = unpack_result.soundtracks;
 }
 
 fn gpu_meshes_from_meshes(m: *const Meshes) void {
@@ -116,6 +121,14 @@ pub const FontInfo = struct {
     bitmap_height: u32 = 0,
 };
 
+pub const SoundtrackType = enum {
+    Background,
+};
+
+pub const SoundtrackInfo = struct {
+    n_samples: u32 = 0,
+};
+
 pub const Packer = struct {
     mats: std.EnumArray(ModelType, Material) = undefined,
     mesh_infos: std.EnumArray(ModelType, MeshInfo) = undefined,
@@ -126,6 +139,9 @@ pub const Packer = struct {
     chars: std.ArrayListUnmanaged(Font.CharInfo) = .{},
     kernings: std.ArrayListUnmanaged(Font.Kerning) = .{},
     font_bitmaps: std.ArrayListUnmanaged(u8) = .{},
+
+    soundtrack_infos: std.EnumArray(SoundtrackType, SoundtrackInfo) = undefined,
+    soundtrack_samples: std.ArrayListUnmanaged(u16) = .{},
 
     const Self = @This();
 
@@ -377,8 +393,76 @@ pub const Packer = struct {
         self.font_infos.getPtr(font_type).* = font_info;
     }
 
+    pub fn add_soundtrack(
+        self: *Packer,
+        gpa_alloc: Allocator,
+        scratch_alloc: Allocator,
+        path: [:0]const u8,
+        soundtrack_type: SoundtrackType,
+    ) !void {
+        log.info(
+            @src(),
+            "Loading soundtrack of type {any} from path: {s}",
+            .{ soundtrack_type, path },
+        );
+
+        const file_mem = try memory.FileMem.init(path);
+        defer file_mem.deinit();
+
+        var err: i32 = undefined;
+        const vorbis = stb.stb_vorbis_open_memory(
+            file_mem.mem.ptr,
+            @intCast(file_mem.mem.len),
+            &err,
+            null,
+        );
+        log.assert(
+            @src(),
+            vorbis != null,
+            "Cannot open vorbis memory: {} for the file path: {s}",
+            .{ err, path },
+        );
+        defer stb.stb_vorbis_close(vorbis);
+
+        const samples_per_channel = stb.stb_vorbis_stream_length_in_samples(vorbis);
+        const samples = samples_per_channel * Audio.CHANNELS;
+        const soundtrack_data = try scratch_alloc.alloc(u16, samples);
+
+        const info = stb.stb_vorbis_get_info(vorbis);
+        const n = stb.stb_vorbis_get_samples_short_interleaved(
+            vorbis,
+            info.channels,
+            @ptrCast(soundtrack_data.ptr),
+            @intCast(samples),
+        );
+        log.assert(
+            @src(),
+            n * 2 == samples,
+            "Did not load the whole soundtrack in memory. Only loaded {d} out of {d}",
+            .{ n * 2, samples },
+        );
+
+        try self.soundtrack_samples.appendSlice(gpa_alloc, soundtrack_data);
+        const soundtrack_info = SoundtrackInfo{
+            .n_samples = samples,
+        };
+        self.soundtrack_infos.getPtr(soundtrack_type).* = soundtrack_info;
+
+        log.info(
+            @src(),
+            "Loaded WAV file from {s} with specs: freq: {}, channels: {}, total samples: {}",
+            .{
+                path,
+                info.sample_rate,
+                info.channels,
+                samples,
+            },
+        );
+    }
+
     pub fn pack_and_write(self: *const Packer, gpa_alloc: Allocator, path: []const u8) !void {
         var total_size: usize = 0;
+        // materials
         total_size = memory.align_up(total_size, @alignOf(Material));
         total_size += Materials.len * @sizeOf(Material);
         total_size = memory.align_up(total_size, @alignOf(MeshInfo));
@@ -387,6 +471,10 @@ pub const Packer = struct {
         total_size += self.indices.items.len * @sizeOf(Mesh.Index);
         total_size = memory.align_up(total_size, @alignOf(Mesh.Vertex));
         total_size += self.vertices.items.len * @sizeOf(Mesh.Vertex);
+        const materials_bytes = total_size;
+        log.info(@src(), "Materials take: {d} bytes", .{materials_bytes});
+
+        // font
         total_size = memory.align_up(total_size, @alignOf(FontInfo));
         total_size += Fonts.len * @sizeOf(FontInfo);
         total_size = memory.align_up(total_size, @alignOf(Font.CharInfo));
@@ -395,6 +483,20 @@ pub const Packer = struct {
         total_size += self.kernings.items.len * @sizeOf(Font.Kerning);
         total_size = memory.align_up(total_size, @alignOf(u8));
         total_size += self.font_bitmaps.items.len * @sizeOf(u8);
+        const font_bytes = total_size - materials_bytes;
+        log.info(@src(), "Font take: {d} bytes", .{font_bytes});
+
+        // soundtracks
+        total_size = memory.align_up(total_size, @alignOf(SoundtrackInfo));
+        total_size += Soundtracks.len * @sizeOf(SoundtrackInfo);
+        // samples should be 64 byte aligned for audio mixing
+        for (self.soundtrack_infos.values) |info| {
+            total_size = memory.align_up(total_size, 64);
+            total_size += info.n_samples * @sizeOf(u16);
+        }
+        const soundtracks_bytes = total_size - materials_bytes - font_bytes;
+        log.info(@src(), "Soundtracks take: {d} bytes", .{soundtracks_bytes});
+
         log.info(@src(), "Total bytes for packed data: {d}", .{total_size});
 
         const mem = try gpa_alloc.alignedAlloc(u8, 4096, total_size);
@@ -411,6 +513,14 @@ pub const Packer = struct {
         _ = try arena_alloc.dupe(Font.Kerning, self.kernings.items);
         _ = try arena_alloc.dupe(u8, self.font_bitmaps.items);
 
+        _ = try arena_alloc.dupe(SoundtrackInfo, &self.soundtrack_infos.values);
+        var saved_samples: u32 = 0;
+        for (self.soundtrack_infos.values) |info| {
+            const s = try arena_alloc.alignedAlloc(u16, 64, info.n_samples);
+            @memcpy(s, self.soundtrack_samples.items[saved_samples..][0..info.n_samples]);
+            saved_samples += info.n_samples;
+        }
+
         const file = try std.fs.cwd().createFile(path, .{});
         defer file.close();
         _ = try file.write(arena_allocator.slice());
@@ -421,6 +531,7 @@ pub const UnpackedAssets = struct {
     meshes: Meshes,
     mats: Materials,
     fonts: Fonts,
+    soundtracks: Soundtracks,
 };
 pub fn unpack(mem: []align(4096) const u8) !UnpackedAssets {
     var mem_ptr: usize = @intFromPtr(mem.ptr);
@@ -485,6 +596,24 @@ pub fn unpack(mem: []align(4096) const u8) !UnpackedAssets {
     bitmaps.ptr = @ptrFromInt(mem_ptr);
     bitmaps.len = total_bitmap_len;
 
+    mem_ptr += @sizeOf(u8) * total_bitmap_len;
+    mem_ptr = memory.align_up(mem_ptr, @alignOf(SoundtrackInfo));
+    var soundtrack_infos: []const SoundtrackInfo = undefined;
+    soundtrack_infos.ptr = @ptrFromInt(mem_ptr);
+    soundtrack_infos.len = Soundtracks.len;
+
+    var total_sample_bytes: usize = 0;
+    for (soundtrack_infos) |info| {
+        total_sample_bytes = memory.align_up(total_sample_bytes, 64);
+        total_sample_bytes += info.n_samples * @sizeOf(u16);
+    }
+
+    mem_ptr += @sizeOf(SoundtrackInfo) * Soundtracks.len;
+    mem_ptr = memory.align_up(mem_ptr, 64);
+    var samples_bytes: []const u8 = undefined;
+    samples_bytes.ptr = @ptrFromInt(mem_ptr);
+    samples_bytes.len = total_sample_bytes;
+
     var result: UnpackedAssets = undefined;
     for (mats, 0..) |material, i|
         result.mats.values[i] = material;
@@ -518,6 +647,18 @@ pub fn unpack(mem: []align(4096) const u8) !UnpackedAssets {
         char_offset += font_info.n_chars;
         kerning_offset += Font.ALL_CHARS.len * Font.ALL_CHARS.len;
         bitmap_offset += bitmap_size;
+    }
+
+    var samples_byte_offset: usize = 0;
+    for (soundtrack_infos, 0..) |info, i| {
+        const soundtrack_bytes = info.n_samples * @sizeOf(u16);
+        const s = samples_bytes[samples_byte_offset..][0..soundtrack_bytes];
+        samples_byte_offset += soundtrack_bytes;
+        samples_byte_offset = memory.align_up(samples_byte_offset, 64);
+
+        result.soundtracks.values[i] = .{
+            .data = @alignCast(@ptrCast(s)),
+        };
     }
 
     return result;

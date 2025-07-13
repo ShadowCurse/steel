@@ -21,6 +21,7 @@ const Level = @import("level.zig");
 const Mesh = @import("mesh.zig");
 const Camera = @import("camera.zig");
 const Platform = @import("platform.zig");
+const Audio = @import("audio.zig");
 const Renderer = @import("renderer.zig");
 const Assets = @import("assets.zig");
 const BoundedArray = std.BoundedArray;
@@ -38,9 +39,21 @@ pub const os = if (builtin.os.tag != .emscripten) std.os else struct {
     };
 };
 
+/// For some reason emsdk does not have it, so raw dog it.
+export fn _emscripten_memcpy_js(dest: [*]u8, src: [*]u8, len: usize) void {
+    var d: []u8 = undefined;
+    d.ptr = dest;
+    d.len = len;
+    var s: []u8 = undefined;
+    s.ptr = src;
+    s.len = len;
+    @memcpy(d, s);
+}
+
 pub fn main() !void {
     Platform.init();
     Renderer.init();
+    try Audio.init();
 
     var app: App = .{};
     try app.init();
@@ -147,6 +160,8 @@ pub const App = struct {
         self.game_camera = game_camera;
 
         self.level.init(self.scratch_allocator.allocator(), self.gpa_allocator.allocator());
+
+        Audio.play(.Background, 0.5, 0.5);
     }
 
     pub fn update(
@@ -479,5 +494,6 @@ pub const App = struct {
         }
 
         self.level.imgui_info();
+        Audio.imgui_info();
     }
 };
