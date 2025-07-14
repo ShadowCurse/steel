@@ -145,8 +145,9 @@ pub const App = struct {
         };
 
         const topdown_camera: Camera = .{
-            .position = .{ .z = 10.0 },
-            .pitch = -std.math.pi / 2.0,
+            .position = .{ .x = -5.0, .y = -5.0, .z = 10.0 },
+            .pitch = -0.6,
+            .yaw = -0.78,
             .type = .TopDown,
         };
         const free_camera: Camera = .{ .position = .{ .y = -5.0, .z = 5.0 }, .pitch = -1.1 };
@@ -180,6 +181,8 @@ pub const App = struct {
             .Free => &self.free_camera,
             .Game => &self.game_camera,
         };
+
+        Renderer.use_0_to_1_depth = self.camera_type == .TopDown;
 
         if (imgui_wants_to_handle_events) {
             new_events = &.{};

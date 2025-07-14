@@ -15,6 +15,8 @@ pub var mesh_infos: std.BoundedArray(RenderMeshInfo, 128) = .{};
 pub var text_shader: shaders.TextShader = undefined;
 pub var char_infos: std.BoundedArray(RenderCharInfo, 128) = .{};
 
+pub var use_0_to_1_depth: bool = false;
+
 // debug things
 pub var show_debug_grid: bool = true;
 pub var debug_grid_scale: f32 = 10.0;
@@ -54,7 +56,10 @@ pub fn reset() void {
     Self.mesh_infos.clear();
     Self.char_infos.clear();
 
-    gl.glClearDepth(0.0);
+    if (use_0_to_1_depth)
+        gl.glClearDepth(1.0)
+    else
+        gl.glClearDepth(0.0);
     gl.glClearColor(0.0, 0.0, 0.0, 1.0);
     gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT);
 }
@@ -141,6 +146,11 @@ pub fn render(
     camera: *const Camera,
     environment: *const shaders.MeshShader.Environment,
 ) void {
+    if (use_0_to_1_depth)
+        gl.glDepthFunc(gl.GL_LESS)
+    else
+        gl.glDepthFunc(gl.GL_GEQUAL);
+
     Self.mesh_shader.use();
     Self.mesh_shader.set_scene_params(
         &camera.view,
