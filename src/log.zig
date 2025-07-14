@@ -35,7 +35,7 @@ pub fn comptime_err(
     comptime src: std.builtin.SourceLocation,
     comptime format: []const u8,
     comptime args: anytype,
-) void {
+) noreturn {
     const header = std.fmt.comptimePrint("[{s}:{}:COMPILE]", .{ src.file, src.line });
     const T = make_struct(@TypeOf(args));
     const t = fill_struct(T, header, args);

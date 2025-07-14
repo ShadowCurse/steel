@@ -5,6 +5,8 @@ const sdl = @import("bindings/sdl.zig");
 const cimgui = @import("bindings/cimgui.zig");
 const memory = @import("memory.zig");
 
+const Allocator = std.mem.Allocator;
+
 const Assets = @import("assets.zig");
 
 pub var audio_device: *sdl.SDL_AudioStream = undefined;

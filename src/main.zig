@@ -78,6 +78,8 @@ pub const App = struct {
 
     assets_file_mem: memory.FileMem = undefined,
 
+    environment: shaders.MeshShader.Environment = undefined,
+
     topdown_camera: Camera = .{},
     free_camera: Camera = .{},
     game_camera: Camera = .{},
@@ -108,23 +110,6 @@ pub const App = struct {
         Placement,
     };
 
-    const ENVIRONMENT: shaders.MeshShader.Environment = .{
-        .lights_position = .{
-            .{ .x = 1.0, .y = 1.0, .z = 1.0 },
-            .{ .x = -1.0, .y = 1.0, .z = 1.0 },
-            .{ .x = 1.0, .y = -1.0, .z = 1.0 },
-            .{ .x = -1.0, .y = -1.0, .z = 1.0 },
-        },
-        .lights_color = .{
-            .{ .r = 1.0 },
-            .{ .g = 1.0 },
-            .{ .b = 1.0 },
-            .{ .r = 1.0, .g = 1.0, .b = 1.0 },
-        },
-        .direct_light_direction = .{ .x = -0.5, .y = -0.5, .z = -1.0 },
-        .direct_light_color = .{ .r = 1.0, .g = 1.0, .b = 1.0 },
-    };
-
     const Self = @This();
 
     pub fn init(self: *Self) !void {
@@ -141,6 +126,23 @@ pub const App = struct {
         self.assets_file_mem =
             memory.FileMem.init(Assets.DEFAULT_PACKED_ASSETS_PATH) catch unreachable;
         Assets.init(self.assets_file_mem.mem) catch unreachable;
+
+        self.environment = .{
+            .lights_position = .{
+                .{ .x = 1.0, .y = 1.0, .z = 1.0 },
+                .{ .x = -1.0, .y = 1.0, .z = 1.0 },
+                .{ .x = 1.0, .y = -1.0, .z = 1.0 },
+                .{ .x = -1.0, .y = -1.0, .z = 1.0 },
+            },
+            .lights_color = .{
+                .{ .r = 1.0 },
+                .{ .g = 1.0 },
+                .{ .b = 1.0 },
+                .{ .r = 1.0, .g = 1.0, .b = 1.0 },
+            },
+            .direct_light_direction = .{ .x = -0.5, .y = -0.5, .z = -1.0 },
+            .direct_light_color = .{ .r = 1.0, .g = 1.0, .b = 1.0 },
+        };
 
         const topdown_camera: Camera = .{
             .position = .{ .z = 10.0 },
@@ -223,7 +225,7 @@ pub const App = struct {
         self.prepare_imgui_frame();
         {
             Renderer.reset();
-            defer Renderer.render(camera, &Self.ENVIRONMENT);
+            defer Renderer.render(camera, &self.environment);
 
             self.draw_level(dt);
             self.draw_ui();
@@ -433,7 +435,6 @@ pub const App = struct {
 
         if (cimgui.igCollapsingHeader_BoolPtr("Camera", &open, 0)) {
             cimgui.format("Camera type", &self.camera_type);
-
             {
                 cimgui.igPushID_Int(cimgui_id);
                 cimgui_id += 1;
@@ -471,14 +472,11 @@ pub const App = struct {
         }
 
         if (cimgui.igCollapsingHeader_BoolPtr("Materials", &open, 0)) {
-            var iter = Assets.materials.iterator();
-            while (iter.next()) |m| {
-                cimgui.igPushID_Int(cimgui_id);
-                cimgui_id += 1;
-                defer cimgui.igPopID();
+            cimgui.format(null, &Assets.materials);
+        }
 
-                cimgui.format(null, m.value);
-            }
+        if (cimgui.igCollapsingHeader_BoolPtr("Environment", &open, 0)) {
+            cimgui.format(null, &self.environment);
         }
 
         if (cimgui.igCollapsingHeader_BoolPtr(
