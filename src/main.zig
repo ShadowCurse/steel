@@ -163,8 +163,6 @@ pub const App = struct {
         self.game_camera = game_camera;
 
         self.level.init(self.scratch_allocator.allocator(), self.gpa_allocator.allocator());
-
-        Audio.play(.Background, 0.5, 0.5);
     }
 
     pub fn update(
