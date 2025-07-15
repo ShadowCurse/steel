@@ -44,15 +44,6 @@ pub fn process_input(self: *Self, event: events.Event, dt: f32) void {
         .Keyboard => |key| {
             const value: f32 = if (key.type == .Pressed) 1.0 else 0.0;
             switch (self.type) {
-                .TopDown => {
-                    switch (key.key) {
-                        events.KeybordKeyScancode.W => self.velocity.y = -value,
-                        events.KeybordKeyScancode.S => self.velocity.y = value,
-                        events.KeybordKeyScancode.A => self.velocity.x = -value,
-                        events.KeybordKeyScancode.D => self.velocity.x = value,
-                        else => {},
-                    }
-                },
                 .Free => {
                     switch (key.key) {
                         events.KeybordKeyScancode.W => self.velocity.z = value,
@@ -64,7 +55,7 @@ pub fn process_input(self: *Self, event: events.Event, dt: f32) void {
                         else => {},
                     }
                 },
-                .Game => {},
+                else => {},
             }
         },
         .Mouse => |mouse| {
@@ -78,10 +69,6 @@ pub fn process_input(self: *Self, event: events.Event, dt: f32) void {
                 .Motion => |motion| {
                     if (self.active) {
                         switch (self.type) {
-                            .TopDown => {
-                                self.position.x -= motion.x * Self.SENSITIVITY * dt;
-                                self.position.y += motion.y * Self.SENSITIVITY * dt;
-                            },
                             .Free => {
                                 self.yaw -= motion.x * Self.SENSITIVITY * dt;
                                 self.pitch -= motion.y * Self.SENSITIVITY * dt;
@@ -92,13 +79,13 @@ pub fn process_input(self: *Self, event: events.Event, dt: f32) void {
                                     self.pitch = -math.PI / 2.0;
                                 }
                             },
-                            .Game => {},
+                            else => {},
                         }
                     }
                 },
                 .Wheel => |wheel| {
                     if (self.type == .TopDown)
-                        self.position.z -= wheel.amount * Self.SENSITIVITY * 50.0 * dt;
+                        self.zoom += wheel.amount * Self.SENSITIVITY * 80.0 * dt;
                 },
             }
         },
@@ -107,7 +94,7 @@ pub fn process_input(self: *Self, event: events.Event, dt: f32) void {
 }
 
 pub fn move(self: *Self, dt: f32) void {
-    if (self.type == .Game) {
+    if (self.type == .Game or self.type == .TopDown) {
         const mouse_clip = Platform.mouse_clip();
         const mouse_xy = self.mouse_to_xy(mouse_clip);
         if (self.last_drag_position) |ldp| {
