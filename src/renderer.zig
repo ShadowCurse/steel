@@ -15,6 +15,9 @@ pub var mesh_infos: std.BoundedArray(RenderMeshInfo, 128) = .{};
 pub var text_shader: shaders.TextShader = undefined;
 pub var char_infos: std.BoundedArray(RenderCharInfo, 128) = .{};
 
+pub var shadow_map_shader: shaders.ShadowMapShader = undefined;
+pub var shadow_map: gpu.ShadowMap = undefined;
+
 pub var use_0_to_1_depth: bool = false;
 
 // debug things
@@ -49,13 +52,17 @@ const Self = @This();
 pub fn init() void {
     Self.mesh_shader = .init();
     Self.text_shader = .init();
+    Self.shadow_map_shader = .init();
+    Self.shadow_map = .init();
     Self.debug_grid_shader = .init();
 }
 
 pub fn reset() void {
     Self.mesh_infos.clear();
     Self.char_infos.clear();
+}
 
+pub fn clear_current_buffers() void {
     if (use_0_to_1_depth)
         gl.glClearDepth(1.0)
     else
@@ -142,15 +149,30 @@ pub fn draw_text(
         char_info.position.x -= half_width;
 }
 
+fn reset_framebuffer() void {
+    gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, 0);
+}
+
 pub fn render(
     camera: *const Camera,
     environment: *const shaders.MeshShader.Environment,
 ) void {
+    Self.shadow_map.use();
+    Self.shadow_map_shader.use();
+    Self.shadow_map_shader.set_params(environment);
+    for (Self.mesh_infos.slice()) |*mi| {
+        Self.shadow_map_shader.set_mesh_params(&mi.model);
+        mi.mesh.draw();
+    }
+
+    reset_framebuffer();
+    Self.clear_current_buffers();
     if (use_0_to_1_depth)
         gl.glDepthFunc(gl.GL_LESS)
     else
         gl.glDepthFunc(gl.GL_GEQUAL);
 
+    shaders.MeshShader.set_shadow_map_texture(&Self.shadow_map);
     Self.mesh_shader.use();
     Self.mesh_shader.set_scene_params(
         &camera.view,

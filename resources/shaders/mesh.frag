@@ -4,6 +4,7 @@ layout (location = 0) out vec4 out_color;
 
 layout (location = 5) in vec3 in_position;
 layout (location = 6) in vec3 in_normal;
+layout (location = 7) in vec4 in_light_space_position;
 
 #define NUM_LIGHTS 4
 
@@ -16,6 +17,8 @@ uniform vec3 albedo;
 uniform float metallic;
 uniform float roughness;
 uniform float ao;
+
+uniform sampler2D shadow_map_texture;
 
 const float PI = 3.14159265359;
 
@@ -49,6 +52,26 @@ float geometry_smith(float ndl, float ndc, float roughness) {
     float ggx1 = geometry_schlick_ggx(ndl, roughness);
     float ggx2 = geometry_schlick_ggx(ndc, roughness);
     return ggx1 * ggx2;
+}
+
+float shadow(vec4 light_space_position, vec3 normal, vec3 to_light) {
+  vec3 projection = light_space_position.xyz / light_space_position.w;
+  if (1.0 < projection.z)
+    return 0;
+  vec3 uv = projection * 0.5 + 0.5;
+  float curr_depth = projection.z;
+  float bias = max(0.005 * (1.0 - dot(normal, to_light)), 0.001);
+
+  float shadow = 0.0;
+  vec2 texel_size = 1.0 / textureSize(shadow_map_texture, 0);
+  for(int x = -1; x <= 1; ++x) {
+      for(int y = -1; y <= 1; ++y) {
+          float pcf_depth = texture(shadow_map_texture, uv.xy + vec2(x, y) * texel_size).r;
+          shadow += pcf_depth < curr_depth - bias ? 1.0 : 0.0;
+      }
+  }
+  shadow /= 9.0;
+  return shadow;
 }
 
 void main() {
@@ -115,7 +138,9 @@ void main() {
         vec3 specular     = numerator / denominator;  
             
         // add to outgoing radiance
-        radiance_out += (kD * albedo / PI + specular) * radiance * ndl; 
+        radiance_out += (kD * albedo / PI + specular) *
+                        radiance * ndl *
+                        (1.0 - shadow(in_light_space_position, normal, to_light));
 
     }
 

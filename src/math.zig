@@ -579,6 +579,19 @@ pub const Mat4 = extern struct {
         return tmp;
     }
 
+    pub fn look_at(position: Vec3, target: Vec3, up: Vec3) Mat4 {
+        const forward = target.sub(position).normalize();
+        const right = forward.cross(up).normalize();
+        const new_up = right.cross(forward);
+
+        return .{
+            .i = right.extend(0.0),
+            .j = forward.extend(0.0),
+            .k = new_up.extend(0.0),
+            .t = .{ .w = 1.0 },
+        };
+    }
+
     pub fn perspective(fovy: f32, aspect: f32, near: f32, far: f32) Mat4 {
         const g = 1.0 / @tan(fovy / 2.0);
         const k = near / (near - far);

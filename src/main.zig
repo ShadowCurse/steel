@@ -140,7 +140,7 @@ pub const App = struct {
                 .{ .b = 1.0 },
                 .{ .r = 1.0, .g = 1.0, .b = 1.0 },
             },
-            .direct_light_direction = .{ .x = -0.5, .y = -0.5, .z = -1.0 },
+            .direct_light_direction = .{ .x = 1.0, .y = 1.0, .z = -2.0 },
             .direct_light_color = .{ .r = 1.0, .g = 1.0, .b = 1.0 },
         };
 
@@ -161,6 +161,7 @@ pub const App = struct {
         self.free_camera = free_camera;
         self.topdown_camera = topdown_camera;
         self.game_camera = game_camera;
+        self.camera_type = .Free;
 
         self.level.init(self.scratch_allocator.allocator(), self.gpa_allocator.allocator());
     }

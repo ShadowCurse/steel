@@ -6,20 +6,11 @@ layout (location = 2) in vec3 in_normal;
 layout (location = 3) in float in_uv_y;
 layout (location = 4) in vec4 in_color;
 
-layout (location = 5) out vec3 out_position;
-layout (location = 6) out vec3 out_normal;
-layout (location = 7) out vec4 out_light_space_position;
-
-uniform mat4 view;
 uniform mat4 projection;
+uniform mat4 view;
 uniform mat4 model;
-uniform mat4 shadow_map_view;
-uniform mat4 shadow_map_projection;
 
 void main() {
     vec4 world_position = model * vec4(in_position, 1.0);
     gl_Position = projection * view * world_position;
-    out_position = world_position.xyz;
-    out_normal = in_normal;
-    out_light_space_position = shadow_map_projection * shadow_map_view * world_position;
 }
