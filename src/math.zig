@@ -3,6 +3,14 @@ const log = @import("log.zig");
 
 pub const PI = std.math.pi;
 
+pub inline fn lerp(start: f32, end: f32, t: f32) f32 {
+    return start + (end - start) * t;
+}
+
+pub inline fn exp_decay(start: f32, end: f32, decay: f32, dt: f32) f32 {
+    return end + (start - end) * std.math.exp(-decay * dt);
+}
+
 pub const Color3 = extern struct {
     r: f32 = 0.0,
     g: f32 = 0.0,
@@ -11,6 +19,15 @@ pub const Color3 = extern struct {
     pub const WHITE: Color3 = .{ .r = 1.0, .g = 1.0, .b = 1.0 };
     pub const RED: Color3 = .{ .r = 1.0, .g = 0.0, .b = 0.0 };
     pub const GREEN: Color3 = .{ .r = 0.0, .g = 1.0, .b = 0.0 };
+
+    pub fn with_alpha(self: Color3, alpha: f32) Color4 {
+        return .{
+            .r = self.r,
+            .g = self.g,
+            .b = self.b,
+            .a = alpha,
+        };
+    }
 };
 
 pub const Color4 = extern struct {
@@ -20,7 +37,10 @@ pub const Color4 = extern struct {
     a: f32 = 0.0,
 
     pub const WHITE: Color4 = .{ .r = 1.0, .g = 1.0, .b = 1.0, .a = 1.0 };
-    pub const RED: Color3 = .{ .r = 1.0, .g = 0.0, .b = 0.0, .a = 1.0 };
+    pub const RED: Color4 = .{ .r = 1.0, .g = 0.0, .b = 0.0, .a = 1.0 };
+    pub const GREEN: Color4 = .{ .r = 0.0, .g = 1.0, .b = 0.0, .a = 1.0 };
+    pub const BLUE: Color4 = .{ .r = 0.0, .g = 0.0, .b = 1.0, .a = 1.0 };
+    pub const TEAL: Color4 = .{ .r = 0.0, .g = 1.0, .b = 1.0, .a = 1.0 };
 
     pub inline fn lerp(start: Color4, end: Color4, t: f32) Color4 {
         return .{
@@ -28,6 +48,14 @@ pub const Color4 = extern struct {
             .g = start.g + (end.g - start.g) * t,
             .b = start.b + (end.b - start.b) * t,
             .a = start.a + (end.a - start.a) * t,
+        };
+    }
+
+    pub inline fn to_color3(self: Color4) Color3 {
+        return .{
+            .r = self.r,
+            .g = self.g,
+            .b = self.b,
         };
     }
 };
@@ -101,10 +129,11 @@ pub const Vec2 = extern struct {
     x: f32 = 0.0,
     y: f32 = 0.0,
 
-    pub const X: Vec2 = .{ .x = 1.0, .y = 0.0 };
-    pub const NEG_X: Vec2 = .{ .x = -1.0, .y = 0.0 };
-    pub const Y: Vec2 = .{ .x = 0.0, .y = 1.0 };
-    pub const NEG_Y: Vec2 = .{ .x = 0.0, .y = -1.0 };
+    pub const ONE: Vec2 = .{ .x = 1.0, .y = 1.0 };
+    pub const X: Vec2 = .{ .x = 1.0 };
+    pub const NEG_X: Vec2 = .{ .x = -1.0 };
+    pub const Y: Vec2 = .{ .y = 1.0 };
+    pub const NEG_Y: Vec2 = .{ .y = -1.0 };
 
     pub inline fn eq(self: Vec2, other: Vec2) bool {
         return self.x == other.x and
@@ -211,6 +240,11 @@ pub const Vec2 = extern struct {
     pub inline fn lerp(start: Vec2, end: Vec2, t: f32) Vec2 {
         return start.add(end.sub(start).mul_f32(t));
     }
+
+    // lower decay => slower movement
+    pub inline fn exp_decay(start: Vec2, end: Vec2, decay: f32, dt: f32) Vec2 {
+        return end.add(start.sub(end).mul_f32(std.math.exp(-decay * dt)));
+    }
 };
 
 pub fn vec3(x: f32, y: f32, z: f32) Vec3 {
@@ -237,6 +271,10 @@ pub const Vec3 = extern struct {
 
     pub inline fn xy(self: Vec3) Vec2 {
         return .{ .x = self.x, .y = self.y };
+    }
+
+    pub inline fn neg(self: Vec3) Vec3 {
+        return .{ .x = -self.x, .y = -self.y, .z = -self.z };
     }
 
     pub inline fn extend(self: Vec3, w: f32) Vec4 {
@@ -310,6 +348,11 @@ pub const Vec3 = extern struct {
     pub inline fn lerp(start: Vec3, end: Vec3, t: f32) Vec3 {
         return start.add(end.sub(start).mul_f32(t));
     }
+
+    // lower decay => slower movement
+    pub inline fn exp_decay(start: Vec3, end: Vec3, decay: f32, dt: f32) Vec3 {
+        return end.add(start.sub(end).mul_f32(std.math.exp(-decay * dt)));
+    }
 };
 
 pub fn vec4(x: f32, y: f32, z: f32, w: f32) Vec4 {
@@ -320,6 +363,14 @@ pub const Vec4 = extern struct {
     y: f32 = 0.0,
     z: f32 = 0.0,
     w: f32 = 0.0,
+
+    pub const ONE: Vec4 = .{ .x = 1.0, .y = 1.0, .z = 1.0, .w = 1.0 };
+    pub const X: Vec4 = .{ .x = 1.0 };
+    pub const NEG_X: Vec4 = .{ .x = -1.0 };
+    pub const Y: Vec4 = .{ .y = 1.0 };
+    pub const NEG_Y: Vec4 = .{ .y = -1.0 };
+    pub const Z: Vec4 = .{ .z = 1.0 };
+    pub const NEG_Z: Vec4 = .{ .z = -1.0 };
 
     pub inline fn eq(self: Vec4, other: Vec4) bool {
         return self.x == other.x and
