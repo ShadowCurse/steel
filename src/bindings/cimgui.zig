@@ -19,7 +19,10 @@ pub fn format(name: ?[*c]const u8, v: anytype) void {
     const type_info = @typeInfo(t);
     switch (type_info) {
         .pointer => |pointer| {
+            if (pointer.is_const) return;
             const type_name: [*c]const u8 = if (name) |n| n else @typeName(t);
+            cimgui.igPushID_Str(type_name);
+            defer cimgui.igPopID();
             if (!fmt_simple_type(type_name, v)) {
                 const child_type_info = @typeInfo(pointer.child);
                 switch (child_type_info) {
@@ -51,9 +54,17 @@ pub fn format(name: ?[*c]const u8, v: anytype) void {
                             _ = cimgui.igEndListBox();
                         }
                     },
+                    .@"union" => |u| {
+                        _ = cimgui.igSeparatorText(type_name);
+                        const active_tag = std.meta.activeTag(v.*);
+                        inline for (u.fields, 0..) |field, i| {
+                            if (i == @intFromEnum(active_tag)) {
+                                const vv: *field.type = @ptrCast(v);
+                                format(field.name, vv);
+                            }
+                        }
+                    },
                     .array => |a| {
-                        // var cimgui_id: i32 = 2048;
-
                         if (cimgui.igTreeNode_Str(type_name)) {
                             defer cimgui.igTreePop();
 
@@ -63,11 +74,49 @@ pub fn format(name: ?[*c]const u8, v: anytype) void {
                             }
                         }
                     },
-                    .optional => {},
+                    .optional => |o| {
+                        _ = cimgui.igSeparatorText(type_name);
+                        if (v.*) |vv| {
+                            // need to make mutable value
+                            var vvv = vv;
+                            format(type_name, &vvv);
+                            v.* = vvv;
+
+                            if (cimgui.igButton("Set to null", .{})) {
+                                v.* = null;
+                            }
+                        } else {
+                            if (cimgui.igButton("Set to default", .{})) {
+                                switch (@typeInfo(o.child)) {
+                                    .@"struct" => v.* = std.mem.zeroes(o.child),
+                                    .@"enum" => v.* = std.mem.zeroes(o.child),
+                                    .@"union" => v.* = std.mem.zeroes(o.child),
+                                    .array => v.* = std.mem.zeroes(o.child),
+                                    else => {},
+                                }
+                            }
+                        }
+                    },
+                    .pointer => |p| {
+                        switch (p.size) {
+                            .one => format(type_name, v.*),
+                            .slice => {
+                                if (cimgui.igTreeNode_Str(type_name)) {
+                                    defer cimgui.igTreePop();
+                                    for (v.*, 0..) |*e, i| {
+                                        cimgui.igPushID_Int(@intCast(i));
+                                        defer cimgui.igPopID();
+                                        format(null, e);
+                                    }
+                                }
+                            },
+                            else => {},
+                        }
+                    },
                     else => log.err(
                         @src(),
-                        "Cannot format pointer child type: {any}",
-                        .{pointer.child},
+                        "Cannot format pointer child type: {any} type info: {any}",
+                        .{ pointer.child, child_type_info },
                     ),
                 }
             }
